@@ -236,13 +236,17 @@ function rekomendasi(k, rSegera, rUngsi) {
   grup.push({ judul: 'Di tempat pengungsian', ikon: 'tent', butir: ungsi });
 
   const siaga = [
-    'Siapkan <b>tas siaga</b>: air minum 3 hari, makanan kering, obat rutin, P3K, senter, peluit, powerbank, masker, salinan dokumen, uang tunai.',
+    'Siapkan <b>tas siaga</b>: air minum 3 hari, makanan kering, obat rutin, P3K, senter, powerbank, masker, salinan dokumen, uang tunai.',
+    'Bawa <b>peluit atau alarm pribadi</b> (±130 dB) untuk memberi tanda kepada tim penyelamat bila terjebak reruntuhan; jangan berteriak terus-menerus agar tidak menghirup debu dan kehabisan tenaga.',
     'Ikat lemari/rak tinggi ke dinding, letakkan barang berat di rak bawah, ketahui letak meteran listrik & keran gas.',
     `Sepakati titik kumpul keluarga${rSegera ? ` (mis. <b>${esc(rSegera.tujuan.nama)}</b>)` : ''} dan latih rutenya, termasuk pada malam hari.`,
   ];
   if (k.kelasKrb && /tinggi|menengah/i.test(k.kelasKrb)) siaga.push(`Lokasi berada di <b>${esc(k.kelasKrb)}</b>: periksakan struktur rumah (kolom-balok beton bertulang, ikatan dinding) dan pertimbangkan retrofit.`);
   if (k.ancamTsunami) siaga.push(`Hafalkan jalur ke tanah tinggi ≥ ${k.tinggiAman} m yang bisa ditempuh &lt; ${k.tibaTsunami ? Math.min(15, k.tibaTsunami) : 15} menit jalan kaki.`);
-  grup.push({ judul: 'Persiapan sebelum gempa', ikon: 'backpack', butir: siaga });
+  grup.push({
+    judul: 'Persiapan sebelum gempa', ikon: 'backpack', butir: siaga,
+    tautan: { href: 'https://shopee.co.id/Cute-Owl-Personal-Alarm-130db-For-Girls-i.1017280745.47706101298', label: 'Lihat alarm pribadi 130 dB', ikon: 'bell-ring' },
+  });
   return grup;
 }
 
@@ -296,7 +300,8 @@ function render(api) {
     const grup = spGempa ? [{ judul: spGempa.judul, ikon: 'building-2', butir: spGempa.butir }, ...rencana.saran] : rencana.saran;
     isi = grup.map((g) => `
       <h3 class="hd-sub"><i data-lucide="${g.ikon}"></i>${g.judul}</h3>
-      <ul class="hd-saran">${g.butir.map((b) => `<li>${b}</li>`).join('')}</ul>`).join('');
+      <ul class="hd-saran">${g.butir.map((b) => `<li>${b}</li>`).join('')}</ul>
+      ${g.tautan ? `<div class="hd-aksi hd-tautan"><a href="${g.tautan.href}" target="_blank" rel="noopener noreferrer nofollow"><i data-lucide="${g.tautan.ikon}"></i>${g.tautan.label}<i data-lucide="external-link"></i></a></div>` : ''}`).join('');
   } else {
     const t = rencana.tahap[aktif];
     const r = t.rute[t.indeks];
