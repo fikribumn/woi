@@ -1,0 +1,7 @@
+# Cache Overpass (dibuat ulang otomatis oleh server)
+.cache/
+node_modules/
+*.log
+.env
+.DS_Store
+Thumbs.db

@@ -1,0 +1,12 @@
+{
+  "name": "waspada-bencana",
+  "version": "0.1.0",
+  "description": "Pemantau potensi gempa bumi, hujan/longsor, dan gunung api di sekitar lokasi pengguna (Indonesia)",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
