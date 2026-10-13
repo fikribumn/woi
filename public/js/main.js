@@ -17,6 +17,7 @@ import { setDataZona, kosongkanZona, nilaiDi, htmlPopup, pilihBahaya } from './z
 import { pasangDarurat, resetDarurat, aturKonteksDarurat, jalankanDarurat } from './evakuasi.js';
 import { pasangUI, setMemuat, bukaHalaman, renderIkon } from './ui.js';
 import { muatTitikKumpul, bersihkanTitik, tambahPribadi } from './titikkumpul.js';
+import { catatGps } from './posisi.js';
 
 const L = window.L;
 
@@ -115,7 +116,10 @@ function pakaiGps() {
   if (!navigator.geolocation) return setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, DEFAULT_LOC.label);
   $('#lokasi-label').textContent = 'Meminta izin lokasi…';
   navigator.geolocation.getCurrentPosition(
-    (pos) => setLokasi(pos.coords.latitude, pos.coords.longitude),
+    (pos) => {
+      catatGps(pos.coords);
+      setLokasi(pos.coords.latitude, pos.coords.longitude);
+    },
     () => setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, `${DEFAULT_LOC.label} — izin lokasi ditolak`),
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 },
   );

@@ -7,6 +7,7 @@ import { renderIkon, turunkanSheet, paddingPanel } from './ui.js';
 import { titikKumpul, namaTitik, JENIS } from './titikkumpul.js';
 import { rute, lengkapiRute, grafikElevasi } from './rute.js';
 import { jalankanEvakuasiGempa, batalGempa } from './evakuasi-gempa.js';
+import { segarkanGps, perbaruiPosisi, htmlPosisi, pasangPosisi, saranPosisi, htmlSaranPosisi } from './posisi.js';
 
 const kepala = (p, judul) => `<div class="hd-head"><b><span class="row-ikon" style="--c:${p.warna}"><i data-lucide="${p.ikon}"></i></span>${judul}</b><button type="button" class="hd-tutup" aria-label="Tutup">✕</button></div>`;
 
@@ -68,6 +69,8 @@ function pulihkanAman() {
 }
 
 let konteks = null;
+let daruratAktif = null; // bencana yang panelnya sedang terbuka
+let jalanDarurat = 0; // penanda pencarian terakhir (abaikan hasil pencarian lama)
 let siapResolve = null;
 let siap = new Promise((r) => { siapResolve = r; });
 
@@ -75,11 +78,14 @@ let siap = new Promise((r) => { siapResolve = r; });
 export function resetDarurat() {
   konteks = null;
   batalGempa();
+  jalanDarurat++;
   // Buat penanda baru hanya bila yang lama sudah terpenuhi, agar pemanggil yang sedang menunggu tidak tergantung.
   if (!siapResolve) siap = new Promise((r) => { siapResolve = r; });
   lapisan.evakuasi.clearLayers();
   $('#hasil-darurat').hidden = true;
   pulihkanAman();
+  // Mode darurat yang sedang terbuka (mis. dibuka sebelum GPS selesai) dijalankan ulang untuk lokasi baru.
+  if (daruratAktif) jalankanDarurat(daruratAktif);
 }
 
 /** Dipanggil main.js setelah semua analisis & zona selesai. */
@@ -147,10 +153,15 @@ let indeksRute = 0;
 export async function jalankanDarurat(idBahaya) {
   const profil = PROFIL[idBahaya];
   if (!profil) return;
+  daruratAktif = idBahaya;
+  const id = ++jalanDarurat;
+  const usang = () => id !== jalanDarurat;
   sembunyikanAman();
+  // Ketinggian/lantai pengguna dibaca bersamaan dengan pencarian area aman
+  const gpsSiap = segarkanGps();
   if (idBahaya === 'gempa') {
     // Gempa punya alur sendiri: titik kumpul segera + area pengungsian + rekomendasi.
-    return jalankanEvakuasiGempa({ profil, kepala, tutup, tunggu: () => siap.then(() => konteks), konteks: () => konteks, jalankanDarurat });
+    return jalankanEvakuasiGempa({ profil, kepala, tutup, gpsSiap, tunggu: () => siap.then(() => konteks), konteks: () => konteks, jalankanDarurat });
   }
   batalGempa();
   const panel = $('#hasil-darurat');
@@ -166,14 +177,17 @@ export async function jalankanDarurat(idBahaya) {
     $('p', panel).textContent = 'Menunggu analisis lokasi selesai…';
     await siap;
   }
+  if (usang()) return;
   const { ctx, hasil } = konteks;
   const asal = [ctx.lat, ctx.lon];
+  const osm = await ctx.osm.catch(() => null);
+  const sub = hasil.gempa?.status === 'fulfilled' ? hasil.gempa.value.subduksiTerdekat : null;
+  const x = { tinggiAman: Math.max(20, sub && sub.km < 300 ? 30 : 20) };
+  const posisiSiap = gpsSiap.then(() => perbaruiPosisi(ctx, osm)).catch(() => null);
 
   try {
-    const grid = await evaluasiArea(ctx.lat, ctx.lon, profil.radius, profil.langkah);
+    const [grid] = await Promise.all([evaluasiArea(ctx.lat, ctx.lon, profil.radius, profil.langkah), posisiSiap]);
     const u = grid.ambil(0, 0) || (await nilaiDi(ctx.lat, ctx.lon).then((v) => ({ elev: v.elev, lereng: v.lereng, lv: v })));
-    const sub = hasil.gempa?.status === 'fulfilled' ? hasil.gempa.value.subduksiTerdekat : null;
-    const x = { tinggiAman: Math.max(20, sub && sub.km < 300 ? 30 : 20) };
 
     const sudahAman = u && u.lv && profil.aman(u, u, x);
     const kandidat = [...cariArea(grid, profil, u, x).slice(0, 4), ...kandidatTitik(grid, profil, u, x, ctx)];
@@ -189,6 +203,7 @@ export async function jalankanDarurat(idBahaya) {
     // Jalan berakhir di titik terdekat yang bisa dicapai; sisanya (mis. mendaki bukit) ditempuh di luar jalan.
     const levelRute = (v) => (idBahaya === 'banjir' ? Math.max(v.banjir, v.longsor) : v[idBahaya]);
     await Promise.all(hasilRute.map((r) => lengkapiRute(r, profil.moda, { level: levelRute })));
+    if (usang()) return;
     // Biaya = waktu tempuh + penalti melewati zona bahaya (menit per 100 m)
     // Titik kumpul resmi/pribadi diberi bonus beberapa menit agar diutamakan bila waktunya sebanding.
     // Tsunami: rute yang tidak sempat ditempuh sebelum gelombang tiba diberi penalti besar.
@@ -199,24 +214,35 @@ export async function jalankanDarurat(idBahaya) {
     hasilRute.sort((a, b) => biaya(a) - biaya(b));
     pilihanRute = hasilRute.slice(0, 3);
     indeksRute = 0;
-    tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub);
+    tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm);
   } catch (err) {
-    panel.innerHTML = `${kepala(profil, profil.label)}
-      <p>${esc(err.message)}</p><p class="hd-arahan">${profil.arahan}</p>`;
-    $('.hd-tutup', panel).onclick = tutup;
-    renderIkon(panel);
+    // Tanpa rute pun, saran sesuai posisi (mis. tetap di lantai atas saat tsunami) tetap ditampilkan.
+    await posisiSiap;
+    if (usang()) return;
+    const galat = () => {
+      panel.innerHTML = `${kepala(profil, profil.label)}
+        ${htmlPosisi()}
+        ${htmlSaranPosisi(saranPosisi(idBahaya, x))}
+        <p>${esc(err.message)}</p><p class="hd-arahan">${profil.arahan}</p>`;
+      $('.hd-tutup', panel).onclick = tutup;
+      renderIkon(panel);
+      pasangPosisi(panel, ctx, osm, galat);
+    };
+    galat();
   }
 }
 
-function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub) {
+function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm) {
   const r = pilihanRute[indeksRute];
   const t = r.tujuan;
   const panel = $('#hasil-darurat');
   const modaTeks = profil.moda === 'foot' ? 'jalan kaki' : 'berkendara';
   const gmaps = `https://www.google.com/maps/dir/?api=1&origin=${ctx.lat},${ctx.lon}&destination=${t.lat.toFixed(6)},${t.lon.toFixed(6)}&travelmode=${profil.moda === 'foot' ? 'walking' : 'driving'}`;
 
+  const sp = saranPosisi(idBahaya, x);
   let peringatan = '';
-  if (idBahaya === 'tsunami') {
+  // Sudah cukup tinggi di gedung: peringatan "tidak sempat, lakukan evakuasi vertikal" tidak relevan lagi.
+  if (idBahaya === 'tsunami' && !sp?.tetapDiAtas) {
     const tiba = sub ? Math.max(10, Math.round(sub.km / 8)) : null;
     if (tiba && r.menit > tiba * 0.8 && !t.vertikal) {
       const gedung = (hasil.bangunan?.status === 'fulfilled' ? hasil.bangunan.value.tinggi : [])[0];
@@ -231,6 +257,9 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub) {
 
   panel.innerHTML = `
     ${kepala(profil, `Evakuasi ${profil.label}`)}
+    ${htmlPosisi()}
+    ${htmlSaranPosisi(sp)}
+    ${sp?.tetapDiAtas ? '<p class="meta">Rute di bawah hanya bila Anda harus turun atau mengungsi:</p>' : ''}
     ${sudahAman ? `<p class="hd-ok">✓ Lokasi Anda sudah berada di area yang relatif aman dari ${profil.label.toLowerCase()}. Rute di bawah menuju area aman lain terdekat bila diperlukan.</p>` : ''}
     ${t.tk ? `<div class="hd-tujuan"><span class="zchip" style="--c:${JENIS[t.tk.jenis].warna}">${JENIS[t.tk.jenis].label}</span> <b>${esc(namaTitik(t.tk))}</b></div>` : ''}
     ${t.vertikal
@@ -251,10 +280,12 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub) {
     <p class="meta muted">Area dipilih otomatis dari DEM ±30 m & zona perkiraan; rute dari OpenStreetMap (OSRM). Utamakan jalur evakuasi resmi & arahan petugas.</p>`;
   $('.hd-tutup', panel).onclick = tutup;
   renderIkon(panel);
+  const ulang = () => tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm);
+  pasangPosisi(panel, ctx, osm, ulang);
   const alt = $('[data-alt]', panel);
   if (alt) alt.onclick = () => {
     indeksRute = (indeksRute + 1) % pilihanRute.length;
-    tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub);
+    ulang();
   };
 
   // Peta
@@ -276,6 +307,8 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub) {
 }
 
 function tutup() {
+  daruratAktif = null;
+  jalanDarurat++;
   batalGempa();
   $('#hasil-darurat').hidden = true;
   lapisan.evakuasi.clearLayers();

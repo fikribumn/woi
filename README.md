@@ -96,6 +96,14 @@ Untuk tsunami, waktu tempuh dibandingkan dengan perkiraan kasar waktu tiba tsuna
 
 Rute jalan kaki dianalisis terhadap medan: waktu dikoreksi tanjakan (fungsi Tobler), dan aplikasi memperingatkan bila rute melintasi sungai/jembatan, lereng curam, jalur sesar, zona genangan tsunami, atau dataran rendah dekat sungai. Di pesisir rendah, panel menampilkan peringatan tsunami beserta tombol **Rute ke tanah tinggi**. Bila layanan rute tidak terjangkau, arah ditunjukkan dengan garis lurus.
 
+### Posisi vertikal (lantai) 🏢
+
+Saran darurat menyesuaikan posisi Anda di gedung (`posisi.js`):
+- **Altitude GPS**: bila perangkat memberi altitude dengan akurasi ≤ 20 m, tinggi di atas tanah dihitung dari *altitude − tinggi geoid − elevasi tanah*, lalu dibagi ±3,5 m per lantai. Koreksi geoid memakai EGM96 (`public/data/geoid.json`, dibuat dengan `tools/buat-geoid.js`) karena Android melaporkan tinggi di atas elipsoid WGS84; di Indonesia selisihnya −9 m (Padang) sampai +75 m (Papua). Safari iOS sudah melaporkan tinggi di atas permukaan laut. Elevasi tanah diambil dari nilai DEM terendah dalam ±100 m agar atap gedung tidak ikut terhitung.
+- **Pilihan lantai**: bila altitude tidak tersedia atau kurang akurat, panel menampilkan pilihan cepat (luar ruangan, lantai 1, 2–3, …, > 40) atau isian lantai tepat. Pilihan manual selalu dipakai lebih dulu dan berlaku 3 jam.
+
+Contoh saran: di lantai 30 saat gempa, jangan ke tangga atau lift, tunggu arahan pengelola, dan turun hanya bila ada api, gas, atau kerusakan struktur. Saat tsunami di lantai ≥ 3 yang sudah di atas batas aman, tetap di atas dan jangan turun. Saat banjir, jangan turun ke basement.
+
 Selama mode darurat terbuka, penanda "Tempat aman" disembunyikan supaya tidak tertukar dengan tujuan evakuasi.
 
 URL `?darurat=tsunami` langsung membuka mode darurat.
@@ -130,9 +138,11 @@ public/js/
   rute.js              Rute OSRM + analisis medan (profil elevasi, Tobler, jembatan, zona)
   ui.js                Ubin ringkasan, navigasi halaman, bottom sheet, ikon
   titikkumpul.js       Titik kumpul gabungan (BNPB, pribadi, OSM, potensial)
+  posisi.js            Posisi vertikal: altitude GPS (koreksi geoid) atau pilihan lantai, saran per lantai
   dem.js indeks.js     Pembaca tile elevasi Terrarium & indeks spasial titik terdekat
   data-gunung.js       Koordinat 69 gunung api + status cadangan
 public/data/subduksi.json   Jalur subduksi (dibuat dengan tools/buat-subduksi.js)
+public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan tools/buat-geoid.js)
 ```
 
 ### Endpoint server

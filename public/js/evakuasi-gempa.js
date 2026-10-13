@@ -12,6 +12,7 @@ import { sampelTitik } from './dem.js';
 import { renderIkon, turunkanSheet, paddingPanel } from './ui.js';
 import { titikKumpul, namaTitik, JENIS } from './titikkumpul.js';
 import { rute, lengkapiRute, grafikElevasi } from './rute.js';
+import { perbaruiPosisi, infoPosisi, htmlPosisi, pasangPosisi, saranPosisi, htmlSaranPosisi } from './posisi.js';
 
 const L = window.L;
 const R_SEGERA = 1.5; // km
@@ -288,16 +289,20 @@ function render(api) {
   const aktif = rencana.aktif;
   const tab = (id, label) => `<button type="button" role="tab" data-tahap="${id}" aria-selected="${aktif === id}">${label}</button>`;
 
+  const spGempa = saranPosisi('gempa');
+  const spTsunami = k.ancamTsunami ? saranPosisi('tsunami', { tinggiAman: k.tinggiAman }) : null;
   let isi = '';
   if (aktif === 'saran') {
-    isi = rencana.saran.map((g) => `
+    const grup = spGempa ? [{ judul: spGempa.judul, ikon: 'building-2', butir: spGempa.butir }, ...rencana.saran] : rencana.saran;
+    isi = grup.map((g) => `
       <h3 class="hd-sub"><i data-lucide="${g.ikon}"></i>${g.judul}</h3>
       <ul class="hd-saran">${g.butir.map((b) => `<li>${b}</li>`).join('')}</ul>`).join('');
   } else {
     const t = rencana.tahap[aktif];
     const r = t.rute[t.indeks];
     if (aktif === 1) {
-      isi = '<p class="hd-arahan">Tujuan <b>begitu guncangan berhenti</b>: ruang terbuka terdekat, jauh dari bangunan, tiang, dan tebing. Tunggu di sini sampai situasi jelas.</p>';
+      isi = htmlSaranPosisi(spGempa);
+      isi += `<p class="hd-arahan">Tujuan <b>${spGempa ? 'setelah Anda sampai di bawah' : 'begitu guncangan berhenti'}</b>: ruang terbuka terdekat, jauh dari bangunan, tiang, dan tebing. Tunggu di sini sampai situasi jelas.</p>`;
     } else {
       isi = `<p class="hd-arahan">Tujuan untuk <b>mengungsi/bermalam</b> selama gempa susulan: area datar & kering di luar zona sesar, longsor, banjir/likuefaksi${k.ancamTsunami ? ', dan tsunami' : ''}.</p>`;
       if (t.sudahAman) isi += '<p class="hd-ok">✓ Lokasi Anda sendiri sudah memenuhi kriteria ini. Bila rumah rusak, cukup mengungsi di ruang terbuka terdekat.</p>';
@@ -308,7 +313,9 @@ function render(api) {
   }
 
   const banner = [];
-  if (k.ancamTsunami) {
+  if (spTsunami?.tetapDiAtas) {
+    banner.push(`<div class="hd-ok"><b>Pesisir rendah, tapi posisi Anda cukup tinggi.</b> Bila guncangan kuat memicu tsunami, <b>tetap di lantai atas</b> (±${Math.round(infoPosisi().dpl)} m dpl) selama gedung tidak rusak berat; jangan turun ke jalan.</div>`);
+  } else if (k.ancamTsunami) {
     banner.push(`<div class="hd-warn"><b>Pesisir rendah — gempa kuat bisa memicu tsunami.</b> Bila guncangan kuat atau &gt; 20 detik, lewati titik kumpul dan langsung ke tanah ≥ ${k.tinggiAman} m.
       <div class="hd-aksi" style="margin-top:8px"><button type="button" data-tsunami>Rute ke tanah tinggi</button></div></div>`);
   }
@@ -316,6 +323,7 @@ function render(api) {
 
   panel.innerHTML = `
     ${api.kepala(api.profil, 'Evakuasi Gempa')}
+    ${htmlPosisi()}
     ${banner.join('')}
     <div class="tabs hd-tabs" role="tablist">${tab(1, '1 Titik kumpul')}${tab(2, '2 Pengungsian')}${tab('saran', 'Saran')}</div>
     ${isi}
@@ -333,6 +341,7 @@ function render(api) {
   };
   const ts = $('[data-tsunami]', panel);
   if (ts) ts.onclick = () => api.jalankanDarurat('tsunami');
+  pasangPosisi(panel, ctx, rencana.osm, () => render(api));
   renderIkon(panel);
   gambarPeta(aktif === 'saran' ? null : aktif);
 }
@@ -396,8 +405,12 @@ export async function jalankanEvakuasiGempa(api) {
     const k = kondisiLokasi(ctx, hasil, osm, u);
     k.gedung = osm?.bangunan || [];
 
-    // Tahap 1 & grid tahap 2 dihitung bersamaan
-    const [segera, grid] = await Promise.all([cariSegera(ctx, osm, k), evaluasiArea(ctx.lat, ctx.lon, R_UNGSI, LANGKAH_UNGSI)]);
+    // Tahap 1, grid tahap 2, dan posisi vertikal pengguna dihitung bersamaan
+    const [segera, grid] = await Promise.all([
+      cariSegera(ctx, osm, k),
+      evaluasiArea(ctx.lat, ctx.lon, R_UNGSI, LANGKAH_UNGSI),
+      api.gpsSiap.then(() => perbaruiPosisi(ctx, osm)).catch(() => null),
+    ]);
     if (id !== jalan) return;
 
     let longgar = false;
@@ -424,7 +437,7 @@ export async function jalankanEvakuasiGempa(api) {
     if (id !== jalan) return;
 
     rencana = {
-      ctx, k, longgar,
+      ctx, k, longgar, osm,
       aktif: 1,
       ditolak: segera.ditolak.length,
       tahap: {
