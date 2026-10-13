@@ -18,6 +18,7 @@ import { pasangDarurat, resetDarurat, aturKonteksDarurat, jalankanDarurat } from
 import { pasangUI, setMemuat, bukaHalaman, renderIkon } from './ui.js';
 import { muatTitikKumpul, bersihkanTitik, tambahPribadi } from './titikkumpul.js';
 import { catatGps } from './posisi.js';
+import { mulaiPantau, aturLokasiPantau } from './pantau.js';
 
 const L = window.L;
 
@@ -81,6 +82,11 @@ async function muatSemua() {
   }
   if (ctx.batal()) return;
   aturKonteksDarurat(ctx, peta);
+  const sub = nilai(peta.gempa)?.subduksiTerdekat;
+  aturLokasiPantau({
+    lat: ctx.lat, lon: ctx.lon, label: lokasi.label,
+    pesisir: !!nilai(peta.tsunami)?.pesisir, sub, tinggiAman: sub && sub.km < 300 ? 30 : 20,
+  });
   await Promise.allSettled([muatJarak(ctx, peta), muatAman(ctx, peta)]);
   renderIkon();
   if (!ctx.batal()) setMemuat(false);
@@ -182,6 +188,7 @@ $('#btn-gps').addEventListener('click', pakaiGps);
 $('#btn-refresh').addEventListener('click', muatSemua);
 pasangUI();
 pasangDarurat();
+mulaiPantau({ jalankanDarurat });
 
 setInterval(muatSemua, AUTO_REFRESH_MS);
 

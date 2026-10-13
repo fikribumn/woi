@@ -8,20 +8,20 @@ const L = window.L;
 const ROMAWI = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 
 // Perkiraan intensitas (MMI) — model Atkinson & Wald (2007), sangat kasar.
-function perkiraanMMI(mag, jarakHiposenterKm) {
+export function perkiraanMMI(mag, jarakHiposenterKm) {
   const R = Math.sqrt(jarakHiposenterKm ** 2 + 14 ** 2);
   const B = Math.max(0, Math.log10(R / 50));
   const mmi = 12.27 + 2.27 * (mag - 6) + 0.1304 * (mag - 6) ** 2 - 1.3 * Math.log10(R) - 0.000707 * R + 1.95 * B - 0.577 * mag * Math.log10(R);
   return Math.max(1, Math.min(12, mmi));
 }
 
-function labelMMI(mmi) {
+export function labelMMI(mmi) {
   const r = Math.round(mmi);
   const ket = r <= 1 ? 'tidak terasa' : r <= 3 ? 'terasa lemah' : r <= 4 ? 'terasa jelas' : r <= 5 ? 'terasa kuat' : r <= 6 ? 'kerusakan ringan' : 'berpotensi merusak';
   return `${ROMAWI[r - 1]} (${ket})`;
 }
 
-function parseBmkg(list, sumber) {
+export function parseBmkg(list, sumber) {
   return (list || []).map((g) => {
     const [lat, lon] = g.Coordinates.split(',').map(Number);
     return {

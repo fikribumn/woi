@@ -96,6 +96,21 @@ Untuk tsunami, waktu tempuh dibandingkan dengan perkiraan kasar waktu tiba tsuna
 
 Rute jalan kaki dianalisis terhadap medan: waktu dikoreksi tanjakan (fungsi Tobler), dan aplikasi memperingatkan bila rute melintasi sungai/jembatan, lereng curam, jalur sesar, zona genangan tsunami, atau dataran rendah dekat sungai. Di pesisir rendah, panel menampilkan peringatan tsunami beserta tombol **Rute ke tanah tinggi**. Bila layanan rute tidak terjangkau, arah ditunjukkan dengan garis lurus.
 
+## Pemantauan live 🔴
+
+Indikator **LIVE** (kanan atas peta; di HP kiri bawah) memeriksa BMKG (`autogempa`, `gempadirasakan`) tiap 30 detik (`pantau.js`). Untuk setiap gempa baru dalam 1 jam terakhir, aplikasi menghitung perkiraan guncangan di lokasi Anda (MMI dari magnitudo, jarak, dan kedalaman):
+
+| Kondisi | Tindakan |
+|---|---|
+| Potensi tsunami (BMKG) dan lokasi di pesisir rendah, ≤ 600 km | Layar peringatan merah + sirene + getar, hitung mundur perkiraan gelombang tiba, tombol **Rute ke tempat tinggi** |
+| MMI ≥ 6 | Peringatan merah "Gempa kuat" |
+| MMI 4–5 | Peringatan oranye "Gempa terasa" |
+| MMI 3 | Pemberitahuan tanpa sirene |
+
+Langkah segera di layar peringatan menyesuaikan posisi Anda (mis. di lantai atas: jangan pakai lift; tsunami di lantai yang sudah cukup tinggi: tetap di atas). Tombol evakuasi membuka Mode Darurat. Kejadian yang sudah diperingatkan tidak diulang. Notifikasi browser bisa diaktifkan dari menu LIVE (muncul saat tab tidak dilihat; belum bekerja saat browser ditutup karena butuh server push).
+
+**Simulasi untuk demo/latihan:** menu LIVE → *Simulasi gempa* / *Simulasi tsunami*, atau URL `?lat=-0.95&lon=100.36&demo=tsunami`. Layar simulasi selalu berlabel **SIMULASI · bukan kejadian nyata**.
+
 ### Posisi vertikal (lantai) 🏢
 
 Saran darurat menyesuaikan posisi Anda di gedung (`posisi.js`):
@@ -138,6 +153,7 @@ public/js/
   rute.js              Rute OSRM + analisis medan (profil elevasi, Tobler, jembatan, zona)
   ui.js                Ubin ringkasan, navigasi halaman, bottom sheet, ikon
   titikkumpul.js       Titik kumpul gabungan (BNPB, pribadi, OSM, potensial)
+  pantau.js            Pemantauan live BMKG, layar peringatan, sirene, simulasi
   posisi.js            Posisi vertikal: altitude GPS (koreksi geoid) atau pilihan lantai, saran per lantai
   dem.js indeks.js     Pembaca tile elevasi Terrarium & indeks spasial titik terdekat
   data-gunung.js       Koordinat 69 gunung api + status cadangan
