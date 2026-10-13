@@ -338,9 +338,54 @@ function serveStatic(req, res) {
       res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end('Tidak ditemukan');
     }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream' });
+    const ext = path.extname(filePath);
+    const header = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
+    if (DEV) {
+      header['Cache-Control'] = 'no-store';
+      if (ext === '.html') data = String(data).replace('</body>', `${SKRIP_RELOAD}</body>`);
+    }
+    res.writeHead(200, header);
     res.end(data);
   });
+}
+
+// ---------- Mode pengembangan (npm run dev): muat ulang browser otomatis ----------
+// Perubahan di public/ dikirim lewat Server-Sent Events: CSS diganti di tempat, berkas lain memuat ulang halaman.
+// server.js sendiri dijalankan dengan `node --watch`, jadi browser memuat ulang begitu tersambung kembali.
+const DEV = process.argv.includes('--dev');
+const pendengar = new Set();
+const SKRIP_RELOAD = `<script>(() => {
+  let putus = false;
+  const es = new EventSource('/__reload');
+  es.onerror = () => { putus = true; };
+  es.onopen = () => { if (putus) location.reload(); };
+  es.onmessage = (e) => {
+    if (e.data.endsWith('.css')) {
+      for (const l of document.querySelectorAll('link[rel=stylesheet]')) {
+        if (l.href.startsWith(location.origin)) l.href = l.href.split('?')[0] + '?v=' + Date.now();
+      }
+    } else location.reload();
+  };
+})();</script>`;
+
+function pantauPerubahan() {
+  let tunda = null;
+  let berkas = '';
+  fs.watch(PUBLIC_DIR, { recursive: true }, (_, nama) => {
+    berkas = String(nama || '');
+    clearTimeout(tunda);
+    tunda = setTimeout(() => {
+      console.log(`[dev] berubah: ${berkas}`);
+      for (const res of pendengar) res.write(`data: ${berkas}\n\n`);
+    }, 120);
+  });
+}
+
+function sambungReload(req, res) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+  res.write('retry: 500\n\n');
+  pendengar.add(res);
+  req.on('close', () => pendengar.delete(res));
 }
 
 const RUTE = {
@@ -367,6 +412,7 @@ const RUTE = {
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
+  if (DEV && u.pathname === '/__reload') return sambungReload(req, res);
   const handler = RUTE[u.pathname];
   if (!handler) return serveStatic(req, res);
   try {
@@ -378,7 +424,8 @@ const server = http.createServer(async (req, res) => {
 });
 
 if (require.main === module) {
-  server.listen(PORT, () => console.log(`Waspada Bencana berjalan di http://localhost:${PORT}`));
+  if (DEV) pantauPerubahan();
+  server.listen(PORT, () => console.log(`Waspada Bencana berjalan di http://localhost:${PORT}${DEV ? ' (mode dev: muat ulang otomatis)' : ''}`));
 }
 
 module.exports = { parseMagma, parseFirms };

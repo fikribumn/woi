@@ -103,7 +103,8 @@ URL `?darurat=tsunami` langsung membuka mode darurat.
 ## Menjalankan
 
 ```bash
-npm start
+npm start          # biasa
+npm run dev        # pengembangan: browser memuat ulang otomatis saat berkas berubah
 ```
 
 Buka http://localhost:8080. Proyek ini butuh Node.js 18+ dan tidak memerlukan `npm install`.
