@@ -4,15 +4,56 @@
 import { getJson, jarakKm } from './util.js';
 import { nilaiDi, WARNA_CSS } from './zona.js';
 import { sampelTitik } from './dem.js';
+import { banjirDiRute } from './laporan.js';
 
 const OSRM = { foot: 'https://routing.openstreetmap.de/routed-foot/route/v1/foot', car: 'https://routing.openstreetmap.de/routed-car/route/v1/driving' };
 
-export async function rute(moda, dari, ke) {
-  const url = `${OSRM[moda]}/${dari[1]},${dari[0]};${ke.lon},${ke.lat}?overview=full&geometries=geojson`;
-  const d = await getJson(url, { timeout: 20000 });
-  const r = d.routes?.[0];
-  if (!r) throw new Error('Rute tidak ditemukan');
-  return { jarakKm: r.distance / 1000, menit: r.duration / 60, garis: r.geometry.coordinates.map(([lo, la]) => [la, lo]) };
+// Server OSRM publik membatasi permintaan beruntun. Tanpa antrean, sebagian rute gagal secara acak, sehingga
+// tujuan yang terpilih berganti-ganti walau lokasinya sama. Jadi: maks. 2 permintaan sekaligus, coba ulang
+// bila gagal, dan simpan hasilnya selama sesi.
+const MAKS_SERENTAK = 2;
+let berjalan = 0;
+const antre = [];
+async function giliran(fn) {
+  if (berjalan >= MAKS_SERENTAK) await new Promise((r) => antre.push(r));
+  berjalan++;
+  try {
+    return await fn();
+  } finally {
+    berjalan--;
+    antre.shift()?.();
+  }
+}
+const tidur = (ms) => new Promise((r) => setTimeout(r, ms));
+const cacheRute = new Map();
+
+export function rute(moda, dari, ke) {
+  const url = `${OSRM[moda]}/${dari[1].toFixed(6)},${dari[0].toFixed(6)};${ke.lon.toFixed(6)},${ke.lat.toFixed(6)}?overview=full&geometries=geojson`;
+  if (!cacheRute.has(url)) {
+    const p = (async () => {
+      let galat;
+      for (let coba = 0; coba < 3; coba++) {
+        if (coba) await tidur(1000 * 2 ** coba);
+        try {
+          const d = await giliran(() => getJson(url, { timeout: 20000 }));
+          const r = d.routes?.[0];
+          // "Tidak ada rute" adalah jawaban pasti, tidak perlu dicoba ulang.
+          if (!r) return null;
+          return { jarakKm: r.distance / 1000, menit: r.duration / 60, garis: r.geometry.coordinates.map(([lo, la]) => [la, lo]) };
+        } catch (err) {
+          galat = err;
+        }
+      }
+      throw galat;
+    })();
+    p.catch(() => cacheRute.delete(url));
+    cacheRute.set(url, p);
+  }
+  // Salinan, karena pemanggil menambahkan properti (tujuan, analisis medan) ke objek rute.
+  return cacheRute.get(url).then((r) => {
+    if (!r) throw new Error('Rute tidak ditemukan');
+    return { ...r };
+  });
 }
 
 /** Kecepatan jalan kaki (km/jam) pada kemiringan g (dh/dx), fungsi Tobler. Datar ±5 km/jam. */
@@ -165,6 +206,8 @@ export async function lengkapiRute(r, moda, opsi) {
   r.sisaKm = jarakKm(...akhir, r.tujuan.lat, r.tujuan.lon);
   r.garisPenuh = r.sisaKm > 0.03 ? [...r.garis, [r.tujuan.lat, r.tujuan.lon]] : r.garis;
   Object.assign(r, await analisisRute(r.garisPenuh, opsi));
+  // Laporan banjir warga (24 jam) & area banjir resmi yang dilewati rute
+  r.banjir = banjirDiRute(r.garisPenuh);
   r.menitOsrm = r.menit;
   // OSRM jalan kaki memakai kecepatan tetap; koreksi dengan tanjakan/turunan dari DEM.
   if (moda === 'foot') r.menit *= Math.max(0.9, Math.min(2.5, r.faktorMedan));

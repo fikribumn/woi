@@ -7,6 +7,7 @@ import { renderIkon, turunkanSheet, paddingPanel } from './ui.js';
 import { titikKumpul, namaTitik, JENIS } from './titikkumpul.js';
 import { rute, lengkapiRute, grafikElevasi } from './rute.js';
 import { jalankanEvakuasiGempa, batalGempa } from './evakuasi-gempa.js';
+import { htmlBanjirRute, tandaiBanjirRute } from './laporan.js';
 import { segarkanGps, perbaruiPosisi, htmlPosisi, pasangPosisi, saranPosisi, htmlSaranPosisi } from './posisi.js';
 
 const kepala = (p, judul) => `<div class="hd-head"><b><span class="row-ikon" style="--c:${p.warna}"><i data-lucide="${p.ikon}"></i></span>${judul}</b><button type="button" class="hd-tutup" aria-label="Tutup">✕</button></div>`;
@@ -99,7 +100,8 @@ export function aturKonteksDarurat(ctx, hasil) {
 
 // ---------- Pencarian area aman ----------
 function cariArea(grid, profil, u, x) {
-  const aman = (c) => c && profil.aman(c, u, x);
+  // Sel ≤ 0 m tidak pernah dijadikan area aman: bisa laut dangkal yang tidak terdeteksi, tambak, atau rawa.
+  const aman = (c) => c && c.elev > 0 && profil.aman(c, u, x);
   const tetangga = profil.tetangga || ((c) => aman(c));
   const kandidat = [];
   for (const c of grid.sel) {
@@ -128,13 +130,10 @@ function cariArea(grid, profil, u, x) {
 
 /** Titik kumpul (resmi/pribadi/OSM/potensial) yang berada di sel aman menjadi kandidat tujuan juga. */
 function kandidatTitik(grid, profil, u, x, ctx) {
-  const kx = 111.32 * Math.cos((ctx.lat * Math.PI) / 180);
   return titikKumpul()
     .filter((t) => t.jarak <= profil.radius)
     .map((t) => {
-      const i = Math.round(((t.lat - ctx.lat) * 110.57) / grid.langkahKm);
-      const j = Math.round(((t.lon - ctx.lon) * kx) / grid.langkahKm);
-      const c = grid.ambil(i, j);
+      const c = grid.ambilDi(t.lat, t.lon);
       if (!c) return null;
       // Tsunami: gedung TES/evakuasi vertikal resmi memang berada di zona genangan, jadi tetap sah sebagai tujuan.
       const vertikal = profil === PROFIL.tsunami && t.jenis === 'resmi' && /vertikal|TES|sementara/i.test(`${t.jenisResmi || ''} ${t.keterangan || ''}`);
@@ -208,7 +207,9 @@ export async function jalankanDarurat(idBahaya) {
     // Titik kumpul resmi/pribadi diberi bonus beberapa menit agar diutamakan bila waktunya sebanding.
     // Tsunami: rute yang tidak sempat ditempuh sebelum gelombang tiba diberi penalti besar.
     const tiba = idBahaya === 'tsunami' && sub ? Math.max(10, Math.round(sub.km / 8)) : null;
+    // Titik yang dilaporkan banjir (24 jam) di sepanjang rute: +15 menit per titik agar rute lain diutamakan.
     const biaya = (r) => r.menit + (r.tujuan.vertikal ? 0 : r.bahayaKm * 10)
+      + r.banjir.length * 15
       - (r.tujuan.tk ? JENIS[r.tujuan.tk.jenis].bonus : 0)
       + (tiba && r.menit > tiba * 0.8 ? 120 : 0);
     hasilRute.sort((a, b) => biaya(a) - biaya(b));
@@ -254,6 +255,7 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm) {
     peringatan += `<div class="hd-info">Jalan berakhir ${fmtKm(r.sisaKm)} sebelum area aman; lanjutkan ${profil.moda === 'foot' ? 'berjalan/mendaki' : 'berjalan kaki'} (garis putus-putus) hingga elevasi ±${Math.round(t.elev)} m.</div>`;
   }
   if (r.bahayaKm > 0.05) peringatan += `<div class="hd-warn">Rute melewati zona bahaya ±${fmtKm(r.bahayaKm)} — lewati secepatnya.</div>`;
+  peringatan += htmlBanjirRute(r);
 
   panel.innerHTML = `
     ${kepala(profil, `Evakuasi ${profil.label}`)}
@@ -299,6 +301,7 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm) {
   if (jarakKm(...akhir, t.lat, t.lon) > 0.03) {
     L.polyline([akhir, [t.lat, t.lon]], { color: '#16a34a', weight: 3, dashArray: '4 6' }).addTo(lapisan.evakuasi);
   }
+  tandaiBanjirRute(r, lapisan.evakuasi);
   L.circle([t.lat, t.lon], { radius: Math.max(120, profil.langkah * 1000 * 1.5), color: '#16a34a', weight: 2, fillColor: '#22c55e', fillOpacity: 0.35 }).addTo(lapisan.evakuasi);
   L.marker([t.lat, t.lon], { icon: ikonTitik('pin-aman', '✓'), zIndexOffset: 900 })
     .bindPopup(`<b>${t.tk ? esc(namaTitik(t.tk)) : 'Area aman'}</b><br>${esc(profil.alasan(t, u))}`)

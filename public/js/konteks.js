@@ -34,21 +34,28 @@ function ambilCuaca(lat, lon) {
   return getJson(url);
 }
 
-/** Grid elevasi n×n berpusat di titik, dengan kemiringan (derajat) tiap titik dari beda tinggi tetangganya. */
+/**
+ * Grid elevasi n×n di sekitar titik, dengan kemiringan (derajat) tiap titik dari beda tinggi tetangganya.
+ * Grid dikunci ke kisi tetap agar GPS yang bergeser beberapa meter tidak mengubah titik-titiknya (dan
+ * tujuan "dataran tinggi" yang diusulkan). Elevasi lokasi persis disimpan di `pusat`.
+ */
 export async function gridElevasi(lat, lon, radiusKm, n = 9) {
-  const kx = 111.32 * Math.cos((lat * Math.PI) / 180);
+  const kx = 111.32 * Math.cos(((Math.round(lat * 10) / 10) * Math.PI) / 180);
   const ky = 110.57;
   const langkah = (2 * radiusKm) / (n - 1);
+  const lat0 = (Math.round((lat * ky) / langkah) * langkah) / ky;
+  const lon0 = (Math.round((lon * kx) / langkah) * langkah) / kx;
   const titik = [];
   for (let i = 0; i < n; i++) {
     for (let j = 0; j < n; j++) {
       const dy = radiusKm - i * langkah; // baris 0 = utara
       const dx = -radiusKm + j * langkah;
-      titik.push({ i, j, lat: lat + dy / ky, lon: lon + dx / kx });
+      titik.push({ i, j, lat: lat0 + dy / ky, lon: lon0 + dx / kx });
     }
   }
-  const r = await getJson(`https://api.open-meteo.com/v1/elevation?latitude=${titik.map((t) => t.lat.toFixed(5)).join(',')}`
-    + `&longitude=${titik.map((t) => t.lon.toFixed(5)).join(',')}`);
+  const semua = [...titik, { lat, lon }];
+  const r = await getJson(`https://api.open-meteo.com/v1/elevation?latitude=${semua.map((t) => t.lat.toFixed(5)).join(',')}`
+    + `&longitude=${semua.map((t) => t.lon.toFixed(5)).join(',')}`);
   titik.forEach((t, k) => { t.elev = r.elevation[k]; });
   const at = (i, j) => titik[Math.max(0, Math.min(n - 1, i)) * n + Math.max(0, Math.min(n - 1, j))].elev;
   const m = langkah * 1000;
@@ -59,7 +66,8 @@ export async function gridElevasi(lat, lon, radiusKm, n = 9) {
     t.jarak = jarakKm(lat, lon, t.lat, t.lon);
   }
   const tengah = Math.floor(n / 2);
-  return { titik, pusat: titik[tengah * n + tengah], langkahKm: langkah };
+  const pusat = { lat, lon, jarak: 0, elev: r.elevation[titik.length], lereng: titik[tengah * n + tengah].lereng };
+  return { titik, pusat, langkahKm: langkah };
 }
 
 /**

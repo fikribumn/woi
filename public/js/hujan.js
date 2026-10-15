@@ -3,6 +3,26 @@
 import { esc, getJson, setCard, fakta, fmtKm, jarakKeGaris, arahKe, levelMaks, catatanGagal } from './util.js';
 import { RADIUS } from './config.js';
 import { garisJarak } from './peta.js';
+import { siapLaporan, laporanDekat, ATRIBUSI } from './laporan.js';
+
+/**
+ * Prakiraan debit sungai GloFAS (Open-Meteo Flood API, grid ±5 km): debit hari ini, puncak 7 hari ke depan,
+ * dan rasionya terhadap rata-rata 7 hari terakhir. Hanya andal untuk sungai besar.
+ */
+async function debitSungai(lat, lon) {
+  const d = await getJson(`https://flood-api.open-meteo.com/v1/flood?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&daily=river_discharge&past_days=7&forecast_days=16`, { timeout: 20000 });
+  const t = d.daily?.time || [];
+  const q = d.daily?.river_discharge || [];
+  const hariIni = new Date().toISOString().slice(0, 10);
+  const i0 = t.indexOf(hariIni);
+  if (i0 < 0 || q[i0] == null) return null;
+  const lalu = q.slice(Math.max(0, i0 - 7), i0).filter((v) => v != null);
+  const depan = q.slice(i0, i0 + 8).map((v, k) => ({ v, tanggal: t[i0 + k] })).filter((x) => x.v != null);
+  const puncak = depan.reduce((a, b) => (b.v > a.v ? b : a), depan[0]);
+  const rata = lalu.length ? lalu.reduce((a, b) => a + b, 0) / lalu.length : q[i0];
+  const rasio = puncak.v / Math.max(rata, 0.5);
+  return { kini: q[i0], puncak, rasio, kecil: rata < 2 && puncak.v < 2 };
+}
 
 function kategoriHujanHarian(mm) {
   if (mm < 0.5) return 'Tidak hujan';
@@ -56,7 +76,11 @@ export function ringkasHujan(cuaca) {
 
 export async function muatHujan(ctx) {
   const { lat, lon } = ctx;
-  const [cuacaR, lerengR, geoR, osmR, gridR] = await Promise.allSettled([ctx.cuaca, lerengHalus(lat, lon), ctx.geologi, ctx.osm, ctx.gridLokal]);
+  const [cuacaR, lerengR, geoR, osmR, gridR, debitR] = await Promise.allSettled([
+    ctx.cuaca, lerengHalus(lat, lon), ctx.geologi, ctx.osm, ctx.gridLokal, debitSungai(lat, lon),
+    // Laporan warga dipakai bila sudah termuat (maks. tunggu 8 detik)
+    Promise.race([siapLaporan, new Promise((r) => setTimeout(r, 8000))]),
+  ]);
   if (ctx.batal()) return null;
   if (cuacaR.status === 'rejected') throw cuacaR.reason;
 
@@ -118,6 +142,17 @@ export async function muatHujan(ctx) {
   if (skorHujan >= 2 && (dekatSungai || cekungan)) lvBanjir = 'tinggi';
   else if ((skorHujan >= 1 && (dekatSungai || cekungan)) || skorHujan >= 2) lvBanjir = 'sedang';
 
+  // Debit sungai (GloFAS): lonjakan ≥ 3× rata-rata seminggu terakhir menaikkan kewaspadaan banjir
+  const debit = debitR.status === 'fulfilled' ? debitR.value : null;
+  const debitNaik = debit && !debit.kecil && debit.rasio >= 3;
+  if (debitNaik && lvBanjir === 'rendah') lvBanjir = 'sedang';
+  if (debitNaik && (dekatSungai || cekungan)) lvBanjir = levelMaks(lvBanjir, 'tinggi');
+
+  // Laporan banjir warga: ≤ 2 km dalam 6 jam terakhir berarti banjir sedang terjadi di dekat lokasi
+  const laporanBanjir = laporanDekat(lat, lon, { jenis: 'flood', km: 5, umurMs: 24 * 3600e3 });
+  const banjirKini = laporanBanjir.filter((l) => l.jarak <= 2 && Date.now() - Date.parse(l.waktu) <= 6 * 3600e3);
+  if (banjirKini.length) lvBanjir = levelMaks(lvBanjir, 'tinggi');
+
   const level = levelMaks(lvLongsor, lvBanjir);
   const nama = { rendah: 'Rendah', sedang: 'Sedang', tinggi: 'Tinggi', bahaya: 'Sangat tinggi' };
   const badge = nama[level];
@@ -125,6 +160,17 @@ export async function muatHujan(ctx) {
   if (lvBanjir !== 'rendah') {
     summary += ` <b>Waspada banjir</b>${dekatSungai ? ` — lokasi ${fmtKm(sungai.km)} dari sungai` : ''}${cekungan ? `${dekatSungai ? ' dan' : ' —'} berada di daerah lebih rendah dari sekitarnya` : ''}.`;
   }
+  if (banjirKini.length) summary += ` <b>Ada ${banjirKini.length} laporan banjir warga dalam 2 km</b> pada 6 jam terakhir.`;
+  if (debitNaik) summary += ` Debit sungai diperkirakan naik ±${debit.rasio.toFixed(1)}× dalam 7 hari ke depan.`;
+
+  const tglPendek = (s) => new Date(`${s}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+  const statusDebit = !debit ? '' : debit.rasio >= 3 ? 'naik tajam' : debit.rasio >= 1.5 ? 'naik' : debit.rasio <= 0.7 ? 'turun' : 'stabil';
+  const faktaDebit = debit
+    ? fakta('Debit sungai (GloFAS)', `${debit.kini.toFixed(debit.kini < 10 ? 1 : 0)} m³/s`,
+      `puncak 7 hari ${debit.puncak.v.toFixed(debit.puncak.v < 10 ? 1 : 0)} m³/s (${tglPendek(debit.puncak.tanggal)}), ${statusDebit}${debit.kecil ? ' · sungai kecil, kurang andal' : ''}`)
+    : fakta('Debit sungai (GloFAS)', '—', debitR.status === 'rejected' ? 'gagal dimuat' : 'tidak ada data');
+  const faktaLaporan = fakta('Laporan banjir warga (24 jam, ≤ 5 km)', String(laporanBanjir.length),
+    laporanBanjir[0] ? `terdekat ${fmtKm(laporanBanjir[0].jarak)} ke arah ${arahKe(lat, lon, laporanBanjir[0].lat, laporanBanjir[0].lon)}${laporanBanjir[0].kedalaman ? `, ±${laporanBanjir[0].kedalaman} cm` : ''}` : 'tidak ada laporan (bukan berarti pasti aman)');
 
   const skalaMaks = Math.max(50, ...h.harian.map((d) => d.mm));
   const bars = h.harian.filter((d) => d.tanggal >= h.harian[h.harian.length - 7]?.tanggal).map((d) => {
@@ -149,7 +195,10 @@ export async function muatHujan(ctx) {
         ${fakta('Kemiringan lereng (±300 m)', lereng ? `${lereng.derajat.toFixed(1)}°` : '—', lereng ? `elevasi ${Math.round(lereng.elevasi)} m` : '')}
         ${fakta('Sungai terdekat', sungai ? fmtKm(sungai.km) : '—', sungai ? `${esc(sungai.nama || 'tanpa nama')} · arah ${arahKe(lat, lon, ...sungai.titik)}` : `tidak ada dalam ${RADIUS.longsor.km} km`)}
         ${fakta('Posisi terhadap sekitar', posisiRelatif == null ? '—' : `${posisiRelatif >= 0 ? '+' : ''}${Math.round(posisiRelatif)} m`, 'dibanding median ±3 km')}
+        ${faktaDebit}
+        ${faktaLaporan}
       </div>
+      <p class="meta">Laporan warga: ${ATRIBUSI}. Titik laporan tampil di peta (lapisan "Laporan warga"). Debit sungai: GloFAS via Open-Meteo, hanya andal untuk sungai besar.</p>
       ${prakiraan ? `<p class="meta"><b>${esc(geo.prakiraan_gt_judul || 'Prakiraan gerakan tanah bulanan')}</b>: potensi <b>${esc(prakiraan.zona_perki || prakiraan.unsur)}</b>. ${esc((prakiraan.keterangan || '').replace(/\*$/, '…'))}</p>` : ''}
       ${catatanGagal('Data Badan Geologi', geoR.status === 'rejected' ? { error: geoR.reason.message } : geo?.gerakan_tanah)}
       <div class="bars">

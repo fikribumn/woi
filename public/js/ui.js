@@ -2,6 +2,7 @@
 // sheet bawah yang bisa diseret di layar kecil, dan ikon Lucide.
 import { $, esc, URUTAN_LEVEL } from './util.js';
 import { map, kontrolLapisan } from './peta.js';
+import { TEMA, MODE, temaAktif, modeAktif, aturTema, aturMode } from './tema.js';
 
 export const KARTU = [
   { id: 'card-gempa', judul: 'Gempa', ikon: 'activity', warna: 'var(--red)' },
@@ -105,6 +106,36 @@ export function bukaHalaman(id) {
   for (const k of SEMUA) document.getElementById(k.id).hidden = k.id !== id;
   $('#sheet-scroll').scrollTop = 0;
   if (id && kecil()) aturSheet('penuh');
+  if (id && !kecil()) ciutkanPanel(false, false);
+}
+
+// ---------- Panel ciut (desktop) ----------
+// Panel bisa diciutkan menjadi kartu kecil berisi nama lokasi & ringkasan risiko agar peta lega.
+export function ciutkanPanel(ciut, simpan = true) {
+  const btn = $('#btn-ciut');
+  $('#sheet').classList.toggle('ciut', ciut);
+  document.documentElement.classList.toggle('panel-ciut', ciut);
+  btn.setAttribute('aria-expanded', String(!ciut));
+  const label = ciut ? 'Tampilkan panel' : 'Sembunyikan panel';
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  if (!simpan) return;
+  try { localStorage.setItem('woi-panel-ciut', ciut ? '1' : '0'); } catch { /* cukup untuk sesi ini */ }
+}
+
+function pasangCiut() {
+  const sheet = $('#sheet');
+  $('#btn-ciut').addEventListener('click', (e) => {
+    e.stopPropagation();
+    ciutkanPanel(!sheet.classList.contains('ciut'));
+  });
+  // Kartu yang diciutkan bisa diketuk di mana saja untuk dibuka lagi
+  sheet.addEventListener('click', () => {
+    if (sheet.classList.contains('ciut') && !kecil()) ciutkanPanel(false);
+  });
+  let awal = false;
+  try { awal = localStorage.getItem('woi-panel-ciut') === '1'; } catch { /* abaikan */ }
+  if (awal) ciutkanPanel(true);
 }
 
 // ---------- Sheet bawah (layar kecil) ----------
@@ -162,9 +193,10 @@ function pasangSeret() {
   map.on('dragstart', () => { if (kecil() && posisi !== 'intip') aturSheet('intip'); });
 }
 
-/** Turunkan sheet (mis. saat mode darurat menampilkan rute). */
+/** Beri ruang untuk peta (mis. saat mode darurat menampilkan rute): turunkan sheet di HP, ciutkan panel di desktop. */
 export function turunkanSheet() {
   if (kecil()) aturSheet('intip');
+  else ciutkanPanel(true, false); // otomatis, tidak mengubah pilihan pengguna
 }
 
 /** Padding fitBounds yang menyisakan ruang untuk panel (di kiri pada desktop, di bawah pada HP). */
@@ -182,8 +214,67 @@ function pasangTombolPeta() {
     e.stopPropagation();
     const el = kontrolLapisan.getContainer();
     if (el.classList.contains('leaflet-control-layers-expanded')) kontrolLapisan.collapse();
-    else kontrolLapisan.expand();
+    else {
+      tutupPanelTema();
+      kontrolLapisan.expand();
+    }
   });
+}
+
+// ---------- Pemilih tema ----------
+const panelTema = () => $('#panel-tema');
+function tutupPanelTema() {
+  panelTema().hidden = true;
+  $('#btn-tema').setAttribute('aria-expanded', 'false');
+}
+
+function perbaruiPanelTema() {
+  document.querySelectorAll('#pt-tema [data-tema]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tema === temaAktif())));
+  document.querySelectorAll('#pt-mode [data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === modeAktif())));
+}
+
+function pasangPemilihTema() {
+  $('#pt-tema').innerHTML = TEMA.map((t) => `
+    <button type="button" data-tema="${t.id}">
+      <span class="pt-contoh">${t.contoh.map((c) => `<i style="background:${c}"></i>`).join('')}</span>
+      <span class="pt-teks"><span class="pt-nama">${esc(t.nama)}</span><span class="pt-ket">${esc(t.ket)}</span></span>
+    </button>`).join('');
+  $('#pt-mode').innerHTML = MODE.map((m) => `<button type="button" data-mode="${m.id}">${ikon(m.ikon)}${esc(m.nama)}</button>`).join('');
+  $('#pt-tema').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-tema]');
+    if (b) aturTema(b.dataset.tema);
+  });
+  $('#pt-mode').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-mode]');
+    if (b) aturMode(b.dataset.mode);
+  });
+  document.addEventListener('tema:ganti', perbaruiPanelTema);
+  perbaruiPanelTema();
+
+  const btn = $('#btn-tema');
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const buka = panelTema().hidden;
+    panelTema().hidden = !buka;
+    btn.setAttribute('aria-expanded', String(buka));
+    if (buka) kontrolLapisan.collapse();
+  });
+  document.addEventListener('click', (e) => {
+    if (!panelTema().hidden && !e.target.closest('#panel-tema')) tutupPanelTema();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panelTema().hidden) {
+      tutupPanelTema();
+      btn.focus();
+    }
+  });
+  cegahKlikPeta(panelTema());
+}
+
+/** Klik & gulir di panel tidak boleh diteruskan ke peta. */
+function cegahKlikPeta(el) {
+  window.L.DomEvent.disableClickPropagation(el);
+  window.L.DomEvent.disableScrollPropagation(el);
 }
 
 export function setMemuat(aktif) {
@@ -194,7 +285,10 @@ export function pasangUI() {
   bangunBeranda();
   amatiKartu();
   pasangSeret();
+  pasangCiut();
   pasangTombolPeta();
-  aturSheet('setengah');
+  pasangPemilihTema();
+  // Di HP sheet mulai dari posisi intip (lokasi + ringkasan risiko) agar peta tidak tertutup
+  aturSheet('intip');
   renderIkon();
 }

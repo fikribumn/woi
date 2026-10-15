@@ -1,5 +1,5 @@
 {
-  "name": "waspada-bencana",
+  "name": "terra-woi",
   "version": "0.1.0",
   "description": "Pemantau potensi gempa bumi, hujan/longsor, dan gunung api di sekitar lokasi pengguna (Indonesia)",
   "private": true,

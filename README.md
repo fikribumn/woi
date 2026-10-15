@@ -1,13 +1,27 @@
-# Waspada Bencana
+# TERRA WOI
+
+*(sebelumnya: Waspada Bencana)*
 
 Web app berbasis peta untuk melihat potensi bencana alam di sekitar lokasi Anda (Indonesia), lengkap dengan kondisi geologi, jarak ke sumber bahaya, dan rekomendasi tempat paling aman.
 
 ## Tampilan
 
-Tampilannya mengikuti gaya Apple Maps / Apple Weather:
-- Peta penuh layar dengan peta dasar abu-abu yang bersih (Esri Canvas). Mode gelap mengikuti pengaturan sistem.
-- Di desktop, **panel kaca** mengambang di kiri. Di HP, panel menjadi **bottom sheet** yang bisa ditarik ke tiga posisi (intip, setengah, penuh), dan otomatis turun saat peta digeser.
-- Beranda berisi **ubin ringkasan** per bencana dengan warna tingkat risiko. Ketuk ubin untuk membuka halaman detail, lalu kembali lewat tombol "‹ Ringkasan".
+Ada tiga tema yang bisa dipilih lewat tombol palet (🎨) di kanan atas peta. Pilihan tersimpan di perangkat dan bisa juga diatur lewat URL `?tema=mochi`:
+
+| Tema | Gaya | Peta dasar |
+|---|---|---|
+| **Awan** (bawaan) | putih, lapang | Esri Canvas terang, zona dihaluskan seperti heatmap |
+| **Mochi** | pastel lembut, sudut bulat | Esri Canvas bernuansa krem, zona bertepi lembut |
+| **Stiker** | ilustrasi datar, garis tepi tegas dan bayangan keras | Esri Canvas bernuansa kertas kuning, zona lebih tegas |
+
+Semua tema memakai font Poppins. Semua peta dasar gratis tanpa API key. Nuansa tiap tema dibuat dengan CSS filter di `style.css` (`.peta-dasar`).
+
+Mode **Otomatis / Terang / Gelap** ada di panel yang sama. Setiap tema punya set warna terang dan gelap sendiri (`style.css`, blok `[data-tema]` dan `[data-gelap]`). Warna zona tetap hijau, kuning, oranye, merah di semua tema.
+
+Tata letaknya:
+- Peta penuh layar, label peta di lapisan terpisah di atas zona berwarna.
+- Di desktop, **panel kaca** mengambang di kiri dengan tinggi menyesuaikan isinya. Panel bisa **diciutkan** (tombol di pojok kanan atasnya) menjadi kartu kecil berisi lokasi dan ringkasan risiko. Pilihan ini diingat, dan panel otomatis diciutkan saat Mode Darurat dibuka. Di HP, panel menjadi **bottom sheet** yang mulai dari posisi intip, bisa ditarik ke setengah atau penuh, dan otomatis turun saat peta digeser.
+- Beranda mendahulukan tindakan (Titik Kumpul, Tempat Paling Aman, Jarak), lalu **ubin ringkasan** per bencana dengan warna tingkat risiko. Ketuk ubin untuk membuka halaman detail, lalu kembali lewat tombol "‹ Ringkasan".
 - Chip pemilih zona, legenda, dan tombol peta (lokasi, lapisan, muat ulang) mengambang di atas peta. Tombol merah **Darurat** ada di kanan bawah.
 - Ikon memakai Lucide, dan warna memakai palet sistem iOS.
 
@@ -40,7 +54,7 @@ Zona dihitung di browser dari DEM Terrarium (AWS Open Data), jadi hasilnya adala
 
 | Kartu | Isi | Radius analisis |
 |---|---|---|
-| 🧭 Tempat Paling Aman | Tujuan evakuasi per bahaya (gempa, tsunami, gunung api, banjir/longsor, kebakaran), ditentukan dari titik kumpul OSM, ruang terbuka, dataran tinggi (grid elevasi), gedung bertingkat, dan arah menjauhi sumber bahaya; disertai RS/pemadam/polisi terdekat | ±3 km (tsunami ±10 km) |
+| 🧭 Tempat Paling Aman | Tujuan evakuasi per bahaya (gempa, tsunami, gunung api, banjir/longsor, kebakaran), ditentukan dari titik kumpul OSM, ruang terbuka, dataran tinggi (grid elevasi), gedung bertingkat, dan arah menjauhi sumber bahaya; rute mengikuti jalan (OSRM, jalan kaki ≤ 4 km, kendaraan bila lebih jauh) beserta waktu tempuh; disertai RS/pemadam/polisi terdekat | ±3 km (tsunami ±10 km) |
 | 📏 Jarak ke Sumber Bahaya | Jarak dan arah ke sesar aktif, zona subduksi, episenter, gunung api, titik api, sungai, garis pantai, dan lereng curam, dibandingkan dengan jarak pengaruh masing-masing | — |
 | 🌏 Gempa & Sesar | Gempa terkini (BMKG, USGS), perkiraan MMI di lokasi, KRB gempa, sesar aktif terdekat beserta sejarah gempanya, jarak ke megathrust | 300 km / sesar 100 km |
 | 🌊 Tsunami | Jarak ke pantai, elevasi, KRB tsunami, jarak ke zona subduksi | 15 km dari pantai |
@@ -53,7 +67,27 @@ Zona dihitung di browser dari DEM Terrarium (AWS Open Data), jadi hasilnya adala
 
 Di peta (tombol lapisan, kanan atas) Anda bisa:
 - mengaktifkan lapisan resmi Badan Geologi: geologi, patahan aktif, zona kerentanan gerakan tanah, prakiraan gerakan tanah, KRB gempa, KRB gunung api, KRB tsunami, dan likuefaksi;
-- menampilkan lingkaran radius analisis tiap bahaya.
+- menampilkan lingkaran radius analisis tiap bahaya;
+- melihat **Gedung 3D** (mati secara bawaan, data baru diunduh saat dinyalakan, tampil pada zoom ≥ 15). Bentuk gedung dalam radius 800 m dari lokasi diambil dari OSM, lalu ditinggikan sesuai `height`/`building:levels`. Warnanya makin pekat untuk gedung yang lebih tinggi, dan gedung tanpa data tinggi dianggap 1 lantai dengan warna netral (`gedung3d.js`, `/api/gedung`).
+
+Rute ke tempat aman dan rute evakuasi selalu mengikuti jalan (OSRM). Permintaan rute diantrekan (maks. 2 sekaligus), dicoba ulang bila gagal, dan disimpan selama sesi. Grid pencarian area aman dikunci ke kisi tetap, jadi GPS yang bergeser beberapa meter tidak mengubah tujuan yang dipilih.
+
+## Laporan banjir & bencana dari warga 🌊
+
+Data dari [PetaBencana.id](https://petabencana.id) (CC BY-NC 4.0, non-komersial, atribusi wajib), lewat `/api/laporan` dengan cache 5 menit (`laporan.js`):
+- **Lapisan peta "Laporan warga"**: laporan 48 jam terakhir (banjir, kebakaran, asap, gunung api, gempa, angin) beserta waktu, kedalaman air, teks, dan foto. Ada juga **area banjir resmi Jakarta** (per RT, diwarnai sesuai tinggi genangan). Area yang tidak diperbarui lebih dari 12 jam dianggap sudah surut.
+- **Peringatan**: kalau ada laporan banjir baru (≤ 6 jam) dalam radius 5 km, muncul notifikasi di layar, plus notifikasi browser bila diizinkan dan tab tidak sedang dilihat.
+- **Kartu Hujan & Banjir** menampilkan jumlah laporan banjir dalam 5 km dan **prakiraan debit sungai GloFAS** (Open-Meteo Flood API). Tingkat banjir naik kalau ada laporan dalam 2 km pada 6 jam terakhir, atau kalau debit diperkirakan naik ≥ 3× rata-rata seminggu.
+- **Rute evakuasi** (Mode Darurat & gempa) diberi penalti +15 menit per titik banjir yang dilewati. Titik itu ditandai di peta dan diberi peringatan. Tempat Paling Aman juga menandai rute yang melewati laporan banjir.
+
+Laporan berasal dari warga dan hanya ada kalau ada yang melapor, jadi "tidak ada laporan" tidak berarti aman.
+
+## Pindah posisi 🧭
+
+Lokasi yang dianalisis bisa diganti tanpa GPS, misalnya untuk menguji aplikasi di daerah lain (`pindah.js`):
+- **Seret pin biru** ke mana saja, dan analisis langsung diulang di titik baru.
+- Tombol **Pindah posisi** (ikon panah empat arah) berisi tombol geser 250 m ke utara/selatan/barat/timur, daftar **kota uji** (Padang, Palu, Jakarta Timur, Sleman, Banda Aceh, Lembang, Palangka Raya, Karo) dengan bahaya yang berbeda-beda, dan tombol kembali ke lokasi GPS.
+- Kalau peta digeser jauh dari lokasi, muncul tombol **Kembali ke posisi** untuk memusatkan peta lagi.
 
 ## Titik kumpul & tempat evakuasi
 
@@ -151,7 +185,9 @@ public/js/
   evakuasi.js          Mode darurat: cari area aman terdekat + rute
   evakuasi-gempa.js    Mode darurat gempa: titik kumpul segera, area pengungsian, saran
   rute.js              Rute OSRM + analisis medan (profil elevasi, Tobler, jembatan, zona)
-  ui.js                Ubin ringkasan, navigasi halaman, bottom sheet, ikon
+  ui.js                Ubin ringkasan, navigasi halaman, bottom sheet, ikon, pemilih tema
+  gedung3d.js          Gedung 3D (canvas perspektif di atas peta, warna per tema)
+  tema.js              Tema (Awan, Mochi, Stiker) & mode terang/gelap; event 'tema:ganti'
   titikkumpul.js       Titik kumpul gabungan (BNPB, pribadi, OSM, potensial)
   pantau.js            Pemantauan live BMKG, layar peringatan, sirene, simulasi
   posisi.js            Posisi vertikal: altitude GPS (koreksi geoid) atau pilihan lantai, saran per lantai
@@ -170,6 +206,7 @@ public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan 
 | `/api/sesar?lat&lon&r` | Geoportal ESDM: patahan aktif (skala detail + regional) | 24 jam |
 | `/api/titik-api?lat&lon&r` | NASA FIRMS VIIRS (S-NPP + NOAA-20), 48 jam | 30 menit |
 | `/api/osm?lat&lon` | OpenStreetMap Overpass: bangunan, titik kumpul, fasilitas, sungai, pantai | 7 hari di disk (`.cache/osm/`), dicoba ulang bila server sibuk |
+| `/api/gedung?lat&lon` | OpenStreetMap Overpass: bentuk & tinggi gedung radius 800 m | 7 hari di disk |
 | `/api/evakuasi-resmi?lat&lon` | BNPB InaRISK: titik kumpul, TES, TEA, evakuasi vertikal/horizontal (radius 15 km) | 24 jam |
 
 Sumber lain diakses langsung dari browser: BMKG, USGS, Open-Meteo (cuaca, elevasi, kualitas udara, geocoding), Macrostrat (cadangan data geologi), dan Nominatim.

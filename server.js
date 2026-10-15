@@ -5,6 +5,8 @@
 //   /api/sesar      patahan aktif di sekitar titik (Badan Geologi)
 //   /api/titik-api  titik panas/kebakaran 48 jam terakhir di sekitar titik (NASA FIRMS VIIRS)
 //   /api/osm        data OpenStreetMap sekitar titik (Overpass; di-cache & dicoba ulang karena server publik sering sibuk)
+//   /api/laporan    laporan warga (banjir, kebakaran, asap, dll.) & area banjir Jakarta dari PetaBencana.id
+//   /api/gedung     bentuk & tinggi gedung sekitar titik untuk tampilan 3D (Overpass, di-cache)
 //   /api/evakuasi-resmi  titik kumpul / TES / TEA resmi BNPB (InaRISK) bila tersedia di area itu
 const http = require('http');
 const fs = require('fs');
@@ -12,7 +14,7 @@ const path = require('path');
 
 const PORT = process.env.PORT || 8080;
 const PUBLIC_DIR = path.join(__dirname, 'public');
-const UA = 'WaspadaBencana/0.2 (aplikasi pemantau lokal)';
+const UA = 'TerraWoi/0.3 (aplikasi pemantau lokal)';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -272,6 +274,105 @@ async function ambilOsmBaru(la, lo) {
   throw galat;
 }
 
+// ---------- PetaBencana.id: laporan warga & area banjir ----------
+// Lisensi data: CC BY-NC 4.0 (non-komersial), atribusi wajib ditampilkan di aplikasi.
+const PETABENCANA = 'https://api.petabencana.id';
+const UMUR_AREA_BANJIR = 12 * 3600e3; // data area banjir yang lebih lama dianggap sudah surut
+
+function getLaporan() {
+  return cached('petabencana', 5 * 60e3, async () => {
+    const [lapR, areaR] = await Promise.allSettled([
+      ambil(`${PETABENCANA}/reports?timeperiod=604800&geoformat=geojson&format=json`, { json: true, timeout: 30000 }),
+      ambil(`${PETABENCANA}/floods?admin=ID-JK&minimum_state=1&geoformat=geojson&format=json`, { json: true, timeout: 30000 }),
+    ]);
+    if (lapR.status === 'rejected') throw lapR.reason;
+    const laporan = (lapR.value.result?.features || []).filter((f) => f.geometry?.type === 'Point' && !f.properties.is_training).map((f) => {
+      const p = f.properties;
+      return {
+        id: p.pkey,
+        lon: f.geometry.coordinates[0],
+        lat: f.geometry.coordinates[1],
+        waktu: p.created_at,
+        jenis: p.disaster_type,
+        kedalaman: p.report_data?.flood_depth ?? null,
+        foto: p.image_url || null,
+        teks: (p.text || '').slice(0, 280),
+        kota: p.tags?.city || null,
+      };
+    });
+    const kini = Date.now();
+    const areaBanjir = areaR.status === 'fulfilled'
+      ? (areaR.value.result?.features || [])
+        .filter((f) => kini - Date.parse(f.properties.last_updated) < UMUR_AREA_BANJIR)
+        .map((f) => ({ geometry: f.geometry, nama: `${f.properties.area_name}, ${f.properties.parent_name}`, kota: f.properties.city_name, tingkat: f.properties.state, waktu: f.properties.last_updated }))
+      : [];
+    return {
+      sumber: 'PetaBencana.id',
+      atribusi: 'Data disediakan oleh PetaBencana.id, dilisensikan di bawah CC BY-NC 4.0.',
+      diperbarui: new Date().toISOString(),
+      laporan,
+      areaBanjir,
+    };
+  });
+}
+
+// ---------- Bentuk gedung untuk tampilan 3D ----------
+// Diminta terpisah dari /api/osm karena ukurannya besar dan hanya dibutuhkan peta.
+const R_GEDUNG_M = 800;
+
+function getGedung(lat, lon) {
+  const la = +lat.toFixed(3); // ±100 m: geser sedikit tetap memakai cache yang sama
+  const lo = +lon.toFixed(3);
+  return cached(`gedung:${la},${lo}`, 24 * 3600e3, async () => {
+    const berkas = path.join(CACHE_OSM, `gedung_${la}_${lo}.json`);
+    try {
+      if (Date.now() - fs.statSync(berkas).mtimeMs < UMUR_OSM) return JSON.parse(fs.readFileSync(berkas, 'utf8'));
+    } catch { /* belum ada */ }
+    const kueri = `[out:json][timeout:90];way(around:${R_GEDUNG_M},${la},${lo})[building][building!=roof];out geom;`;
+    const body = new URLSearchParams({ data: kueri });
+    let galat;
+    for (let coba = 0; coba < 2; coba++) {
+      for (const url of OVERPASS) {
+        try {
+          const res = await fetch(url, { method: 'POST', body, headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(100000) });
+          if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+          const hasil = ringkasGedung((await res.json()).elements);
+          try {
+            fs.mkdirSync(CACHE_OSM, { recursive: true });
+            fs.writeFileSync(berkas, JSON.stringify(hasil));
+          } catch (e) {
+            console.warn('[gedung] gagal menyimpan cache:', e.message);
+          }
+          return hasil;
+        } catch (e) {
+          galat = e;
+        }
+      }
+      await tunggu(4000);
+    }
+    throw galat;
+  });
+}
+
+/** Ringkas: g = [lat, lon, lat, lon, ...] (5 desimal), t = tinggi (m) bila diketahui, l = jumlah lantai, n = nama. */
+function ringkasGedung(elements) {
+  const gedung = [];
+  for (const e of elements) {
+    if (!e.geometry || e.geometry.length < 4) continue;
+    const t = e.tags || {};
+    const g = [];
+    for (const p of e.geometry) if (p) g.push(+p.lat.toFixed(5), +p.lon.toFixed(5));
+    const item = { g };
+    const lantai = parseFloat(t['building:levels']);
+    const tinggi = parseFloat(t.height);
+    if (Number.isFinite(tinggi) && tinggi > 0) item.t = Math.min(tinggi, 600);
+    if (Number.isFinite(lantai) && lantai > 0) item.l = Math.min(lantai, 150);
+    if (t.name) item.n = t.name;
+    gedung.push(item);
+  }
+  return { sumber: 'OpenStreetMap (Overpass)', radiusM: R_GEDUNG_M, gedung };
+}
+
 // ---------- BNPB: tempat evakuasi resmi (InaRISK) ----------
 // Data rencana evakuasi BNPB baru tersedia untuk daerah percontohan (mis. Badung, Bali).
 const BNPB = 'https://gis.bnpb.go.id/server/rest/services';
@@ -397,6 +498,8 @@ const RUTE = {
     return getSesar(lat, lon, r);
   },
   '/api/osm': (u) => { const { lat, lon } = koordinat(u); return getOsm(lat, lon); },
+  '/api/laporan': () => getLaporan(),
+  '/api/gedung': (u) => { const { lat, lon } = koordinat(u); return getGedung(lat, lon); },
   '/api/evakuasi-resmi': (u) => { const { lat, lon } = koordinat(u); return getEvakuasiResmi(lat, lon); },
   '/api/titik-api': async (u) => {
     const { lat, lon } = koordinat(u);
@@ -425,7 +528,7 @@ const server = http.createServer(async (req, res) => {
 
 if (require.main === module) {
   if (DEV) pantauPerubahan();
-  server.listen(PORT, () => console.log(`Waspada Bencana berjalan di http://localhost:${PORT}${DEV ? ' (mode dev: muat ulang otomatis)' : ''}`));
+  server.listen(PORT, () => console.log(`TERRA WOI berjalan di http://localhost:${PORT}${DEV ? ' (mode dev: muat ulang otomatis)' : ''}`));
 }
 
 module.exports = { parseMagma, parseFirms };

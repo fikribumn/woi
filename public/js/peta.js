@@ -1,20 +1,31 @@
 // Peta Leaflet: peta dasar, lapisan data, lapisan resmi Badan Geologi, dan lingkaran radius per bahaya.
 import { RADIUS, DEFAULT_LOC } from './config.js';
+import { temaAktif, gelapAktif } from './tema.js';
 
 const L = window.L;
 
 export const map = L.map('map', { zoomControl: false }).setView([DEFAULT_LOC.lat, DEFAULT_LOC.lon], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-// Peta dasar abu-abu yang bersih (Esri Canvas) agar zona berwarna menonjol; label di lapisan terpisah
-// di atas zona. Versi gelap mengikuti mode gelap sistem.
-const gelap = window.matchMedia('(prefers-color-scheme: dark)').matches;
+// Peta dasar Esri Canvas (gratis tanpa API key) agar zona berwarna menonjol; label di lapisan terpisah
+// di atas zona. Nuansa tiap tema (krem untuk Mochi, kertas kuning untuk Stiker) diberikan lewat CSS
+// filter pada .peta-dasar. Mode gelap memakai versi Dark Gray.
+// Catatan: CARTO basemaps tidak dipakai karena kini mewajibkan API key.
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas';
-const tema = gelap ? 'World_Dark_Gray' : 'World_Light_Gray';
-const kanvas = L.layerGroup([
-  L.tileLayer(`${ESRI}/${tema}_Base/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 19, maxNativeZoom: 16, attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap' }),
-  L.tileLayer(`${ESRI}/${tema}_Reference/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 19, maxNativeZoom: 16, zIndex: 260 }),
-]).addTo(map);
+function urlDasar() {
+  const gaya = gelapAktif() ? 'World_Dark_Gray' : 'World_Light_Gray';
+  return { dasar: `${ESRI}/${gaya}_Base/MapServer/tile/{z}/{y}/{x}`, label: `${ESRI}/${gaya}_Reference/MapServer/tile/{z}/{y}/{x}` };
+}
+const opsiEsri = { maxZoom: 19, maxNativeZoom: 16 };
+const url0 = urlDasar();
+const dasar = L.tileLayer(url0.dasar, { ...opsiEsri, className: 'peta-dasar', attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap' });
+const label = L.tileLayer(url0.label, { ...opsiEsri, className: 'peta-label', zIndex: 260 });
+const kanvas = L.layerGroup([dasar, label]).addTo(map);
+document.addEventListener('tema:ganti', () => {
+  const u = urlDasar();
+  if (dasar._url !== u.dasar) dasar.setUrl(u.dasar);
+  if (label._url !== u.label) label.setUrl(u.label);
+});
 const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap',
@@ -98,7 +109,7 @@ for (const [k, r] of Object.entries(RADIUS)) {
 }
 
 export const kontrolLapisan = L.control.layers(
-  { 'Standar': kanvas, 'OpenStreetMap': osm, 'Topografi': topo },
+  { 'Sesuai tema': kanvas, 'OpenStreetMap': osm, 'Topografi': topo },
   {
     'Gempa terkini': lapisan.gempa,
     'Sesar & subduksi': lapisan.sesar,
@@ -123,7 +134,15 @@ let markerSaya = null;
 
 export function setPusat(lat, lon) {
   if (markerSaya) markerSaya.remove();
-  markerSaya = L.marker([lat, lon], { zIndexOffset: 1000 }).addTo(map).bindPopup('Lokasi yang diperiksa');
+  const ikon = L.divIcon({ className: '', html: '<div class="pin-saya"></div>', iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -12] });
+  // Pin bisa diseret untuk memindahkan lokasi yang dianalisis (ditangani pindah.js lewat event 'lokasi:seret').
+  markerSaya = L.marker([lat, lon], { icon: ikon, zIndexOffset: 1000, draggable: true, autoPan: true, title: 'Seret untuk memindahkan lokasi' })
+    .addTo(map)
+    .bindPopup('Lokasi yang diperiksa. Seret pin ini untuk pindah posisi.');
+  markerSaya.on('dragend', (e) => {
+    const p = e.target.getLatLng();
+    document.dispatchEvent(new CustomEvent('lokasi:seret', { detail: { lat: p.lat, lon: p.lng } }));
+  });
   for (const [k, r] of Object.entries(RADIUS)) {
     radiusLayer[k].clearLayers();
     L.circle([lat, lon], {

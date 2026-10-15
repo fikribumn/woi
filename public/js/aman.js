@@ -3,10 +3,19 @@
 import { esc, bearing, arahKe, namaArah, tujuan, jarakKm, jarakKeGaris, fmtKm, URUTAN_LEVEL, $ } from './util.js';
 import { RADIUS, RADIUS_BAHAYA_GUNUNG, LEVEL_GUNUNG } from './config.js';
 import { lapisan, map, ikonTitik } from './peta.js';
-import { pilihBahaya, bahayaTerpilih, nilaiDi, NAMA_LEVEL, WARNA_CSS } from './zona.js';
+import { pilihBahaya, bahayaTerpilih, nilaiDi, diLaut, layakTujuan, NAMA_LEVEL, WARNA_CSS } from './zona.js';
 import { titikKumpul, namaTitik, JENIS } from './titikkumpul.js';
+import { rute } from './rute.js';
+import { banjirDiRute } from './laporan.js';
 
 const L = window.L;
+
+let giliranTampil = 0;
+// Urutkan titik grid per 250 m jarak, lalu elevasi tertinggi, agar GPS yang bergeser sedikit tidak
+// menukar tujuan yang jaraknya hampir sama.
+const urutStabil = (a, b) => Math.round(a.jarak * 4) - Math.round(b.jarak * 4) || b.elev - a.elev;
+// Tujuan jauh (gunung api, kebakaran) ditempuh dengan kendaraan, sisanya jalan kaki.
+const modaUntuk = (t) => (t.jarak > 4 ? 'car' : 'foot');
 
 const nilai = (r) => (r.status === 'fulfilled' ? r.value : null);
 // Titik kumpul resmi/pribadi/OSM (tanpa kandidat potensial)
@@ -31,8 +40,8 @@ function opsiGempa(ctx, osm, gempa) {
   if (sesar && sesar.km < 5) {
     const menjauh = bearing(...sesar.titik, ctx.lat, ctx.lon);
     const km = 5.5 - sesar.km;
-    const [la, lo] = tujuan(ctx.lat, ctx.lon, menjauh, km);
-    keluarSesar.push({ lat: la, lon: lo, jarak: km, judul: `Luar zona ${sesar.nama}`, alasan: `Menjauhi jalur sesar ke arah ${namaArah(menjauh)} (untuk mengungsi/tinggal sementara setelah gempa)` });
+    keluarSesar.push(titikArah(ctx, menjauh, km, sesar.titik, `Luar zona ${sesar.nama}`,
+      (a) => `Menjauhi jalur sesar ke arah ${namaArah(a)} (untuk mengungsi/tinggal sementara setelah gempa)`));
   }
   const kandidat = [
     ...tkUtama().filter((t) => t.jarak <= RADIUS.aman.km).map((t) => ({ ...t, bobot: t.jarak * 0.7 })),
@@ -57,7 +66,7 @@ function opsiTsunami(ctx, ts, grids, bangunan, osm) {
   const tinggiAman = Math.max(20, (ts.elev ?? 0) + 15);
   const darat = titik
     .filter((t) => t.elev >= tinggiAman && t.lereng < 25 && (!ts.pantai || jarakKeGaris(t.lat, t.lon, [[ts.pantai.titik]]).km >= ts.pantai.km))
-    .sort((a, b) => a.jarak - b.jarak)
+    .sort(urutStabil)
     .slice(0, 2)
     .map((t) => ({ ...t, judul: `Dataran tinggi ±${Math.round(t.elev)} m`, alasan: `Lebih tinggi ${Math.round(t.elev - (ts.elev ?? 0))} m dari lokasi, menjauhi pantai` }));
   const vertikal = (bangunan?.tinggi || []).slice().sort((a, b) => a.jarak - b.jarak).slice(0, 2)
@@ -79,8 +88,8 @@ function opsiGunung(ctx, gn, osm) {
   const target = Math.max(RADIUS_BAHAYA_GUNUNG[v.level] + 5, gn.krb ? 15 : 0);
   const tempat = [];
   if (v.jarak < target) {
-    const [la, lo] = tujuan(ctx.lat, ctx.lon, menjauh, target - v.jarak);
-    tempat.push({ lat: la, lon: lo, jarak: target - v.jarak, judul: `±${target} km dari ${v.nama}`, alasan: `Menjauh ke arah ${namaArah(menjauh)}, di luar radius bahaya Level ${v.level}` });
+    tempat.push(titikArah(ctx, menjauh, target - v.jarak, [v.lat, v.lon], `±${target} km dari ${v.nama}`,
+      (a) => `Menjauh ke arah ${namaArah(a)}, di luar radius bahaya Level ${v.level}`));
   }
   const tk = tkUtama()
     .filter((t) => jarakKm(t.lat, t.lon, v.lat, v.lon) > Math.max(v.jarak, target))
@@ -98,10 +107,10 @@ function opsiBanjirLongsor(ctx, grid, osm, hj) {
   const sungai = (osm?.sungai || []).map((s) => s.garis);
   const pusat = grid.pusat;
   const kandidat = grid.titik
-    .filter((t) => t !== pusat && t.elev >= pusat.elev + 5 && t.lereng < 10)
+    .filter((t) => t !== pusat && t.elev > 0 && t.elev >= pusat.elev + 5 && t.lereng < 10)
     .map((t) => ({ ...t, keSungai: sungai.length ? jarakKeGaris(t.lat, t.lon, sungai).km : Infinity }))
     .filter((t) => t.keSungai >= 0.3)
-    .sort((a, b) => a.jarak - b.jarak)
+    .sort(urutStabil)
     .slice(0, 3)
     .map((t) => ({
       ...t, judul: `Area landai ±${Math.round(t.elev)} m`,
@@ -124,8 +133,8 @@ function opsiKebakaran(ctx, kb, cuaca) {
   let arahan = 'Saat asap: tetap di dalam ruangan, tutup jendela, gunakan masker N95 dan penyaring udara.';
   if (t && t.jarak <= 20) {
     const menjauh = bearing(t.lat, t.lon, ctx.lat, ctx.lon);
-    const [la, lo] = tujuan(ctx.lat, ctx.lon, menjauh, Math.max(2, 10 - t.jarak));
-    tempat.push({ lat: la, lon: lo, jarak: Math.max(2, 10 - t.jarak), judul: 'Arah menjauhi titik api', alasan: `Ke arah ${namaArah(menjauh)}, ≥ 10 km dari titik api terdekat` });
+    tempat.push(titikArah(ctx, menjauh, Math.max(2, 10 - t.jarak), [t.lat, t.lon], 'Arah menjauhi titik api',
+      (a) => `Ke arah ${namaArah(a)}, ≥ 10 km dari titik api terdekat`));
     arahan = `Titik api terdekat ${fmtKm(t.jarak)} ke arah ${arahKe(ctx.lat, ctx.lon, t.lat, t.lon)}. Bila api mendekat, menjauh ke arah <b>${namaArah(menjauh)}</b>`
       + (kini ? `; hindari arah ${namaArah(kini.wind_direction_10m + 180)} karena angin membawa api dan asap ke sana` : '')
       + '. ' + arahan;
@@ -138,14 +147,54 @@ const TAB_KE_ZONA = { gempa: 'gempa', tsunami: 'tsunami', gunung: 'gunung', banj
 const ZONA_KE_TAB = { gempa: 'gempa', tsunami: 'tsunami', gunung: 'gunung', banjir: 'banjir', longsor: 'banjir', kebakaran: 'kebakaran' };
 let pendengarZona = null;
 
-/** Beri tiap tujuan tingkat zona untuk bahayanya; buang yang rawan/bahaya bila masih ada alternatif. */
-async function saringDenganZona(id, o) {
+/**
+ * Tujuan berupa "maju km ke arah tertentu" dari lokasi, menjauhi sumber bahaya. Posisinya diperiksa
+ * (dan digeser bila jatuh di laut) oleh keDarat di saringDenganZona.
+ */
+function titikArah(ctx, arah, km, sumber, judul, alasanArah) {
+  const [lat, lon] = tujuan(ctx.lat, ctx.lon, arah, km);
+  return { lat, lon, jarak: km, judul, alasan: alasanArah(arah), arah, sumber, alasanArah };
+}
+
+const SIMPANGAN = [0, 20, -20, 40, -40, 60, -60, 90, -90];
+/**
+ * Pastikan titik arah berada di daratan. Bila jatuh di laut, coba arah yang sedikit menyimpang dan jarak
+ * yang lebih pendek/panjang, dengan syarat tetap sejauh semula dari sumber bahaya. null bila tidak ada.
+ */
+async function keDarat(ctx, t) {
+  const jauhSemula = jarakKm(t.lat, t.lon, ...t.sumber);
+  for (const f of [1, 0.8, 1.3, 0.6]) {
+    const coba = SIMPANGAN.map((s) => {
+      const arah = (t.arah + s + 360) % 360;
+      const [lat, lon] = tujuan(ctx.lat, ctx.lon, arah, t.jarak * f);
+      return { lat, lon, arah, jarak: t.jarak * f };
+    }).filter((p) => jarakKm(p.lat, p.lon, ...t.sumber) >= jauhSemula * 0.9);
+    const nilai = await Promise.all(coba.map((p) => nilaiDi(p.lat, p.lon).catch(() => null)));
+    const i = nilai.findIndex(layakTujuan);
+    if (i >= 0) return { ...coba[i], alasan: t.alasanArah(coba[i].arah) };
+  }
+  return null;
+}
+
+/**
+ * Beri tiap tujuan tingkat zona untuk bahayanya; buang yang rawan/bahaya bila masih ada alternatif.
+ * Tujuan di laut selalu dibuang (titik arah digeser dulu ke daratan bila bisa).
+ */
+async function saringDenganZona(ctx, id, o) {
+  o.tempat = (await Promise.all(o.tempat.map(async (t) => {
+    if (t.arah == null) return t;
+    const p = await keDarat(ctx, t);
+    return p ? { ...t, ...p } : null;
+  }))).filter(Boolean);
   await Promise.all(o.tempat.map(async (t) => {
     try {
       const v = await nilaiDi(t.lat, t.lon);
-      if (v) t.zona = id === 'banjir' ? Math.max(v.banjir, v.longsor) : v[id];
+      if (!v) return;
+      if (diLaut(v)) t.laut = true;
+      else t.zona = id === 'banjir' ? Math.max(v.banjir, v.longsor) : v[id];
     } catch { /* biarkan tanpa zona */ }
   }));
+  o.tempat = o.tempat.filter((t) => !t.laut);
   const aman = o.tempat.filter((t) => !(t.zona >= 2));
   if (aman.length) o.tempat = aman;
   else if (o.tempat.length) o.arahan += ' <br><b>Catatan:</b> semua tujuan terdekat masih berada di zona rawan; pilih yang paling dekat untuk keadaan darurat, lalu menjauh ke zona hijau di peta.';
@@ -174,7 +223,7 @@ export async function muatAman(ctx, hasil) {
     banjir: opsiBanjirLongsor(ctx, grid, osm, h.hujan),
     kebakaran: opsiKebakaran(ctx, h.kebakaran, nilai(cuacaR)),
   };
-  await Promise.all(Object.entries(opsi).map(([id, o]) => saringDenganZona(id, o)));
+  await Promise.all(Object.entries(opsi).map(([id, o]) => saringDenganZona(ctx, id, o)));
   if (ctx.batal()) return;
   const levelTab = {
     gempa: h.gempa?.level, tsunami: h.tsunami?.level, gunung: h.gunung?.level, banjir: h.hujan?.level, kebakaran: h.kebakaran?.level,
@@ -198,24 +247,54 @@ export async function muatAman(ctx, hasil) {
     <div data-isi></div>
     ${fasilitas.length ? `<h3 class="sub">Fasilitas darurat terdekat</h3><ul class="list">${fasilitas.map(({ label, f }) => `
       <li><div>${label}<div class="meta">${esc(f.nama || 'tanpa nama')}</div></div><div class="right">${fmtKm(f.jarak)}<div class="meta">${arahKe(ctx.lat, ctx.lon, f.lat, f.lon)}</div></div></li>`).join('')}</ul>` : ''}
-    <p class="meta muted">Lokasi tujuan dihitung otomatis dari data terbuka (OSM, DEM ±90 m) dan belum memperhitungkan jalan, pagar, atau kondisi lapangan. Utamakan jalur evakuasi resmi BPBD.</p>`;
+    <p class="meta muted">Lokasi tujuan dihitung otomatis dari data terbuka (OSM, DEM ±90 m). Rute mengikuti jalan di OpenStreetMap, tetapi belum memperhitungkan pagar, jalan rusak, atau kondisi lapangan. Utamakan jalur evakuasi resmi BPBD.</p>`;
 
   const tampilkan = (id) => {
+    const giliran = ++giliranTampil;
+    const masihAktif = () => giliran === giliranTampil && !ctx.batal();
     detail.querySelectorAll('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
     const o = opsi[id];
     $('[data-isi]', detail).innerHTML = `<p>${o.arahan}</p>${o.tempat.length ? `<ol class="list list-num">${o.tempat.map((t, i) => `
-      <li data-i="${i}"><div><b>${esc(t.judul)}</b>${t.zona != null ? ` <span class="zchip" style="--c:${WARNA_CSS[t.zona]}">zona ${NAMA_LEVEL[t.zona].toLowerCase()}</span>` : ''}<div class="meta">${esc(t.alasan)}</div></div>
+      <li data-i="${i}"><div><b>${esc(t.judul)}</b>${t.zona != null ? ` <span class="zchip" style="--c:${WARNA_CSS[t.zona]}">zona ${NAMA_LEVEL[t.zona].toLowerCase()}</span>` : ''}<div class="meta">${esc(t.alasan)}</div><div class="meta" data-rute>Mencari rute jalan…</div></div>
       <div class="right">${fmtKm(t.jarak)}<div class="meta">${arahKe(ctx.lat, ctx.lon, t.lat, t.lon)}</div></div></li>`).join('')}</ol>` : ''}`;
     lapisan.aman.clearLayers();
+    const garisRute = [];
     o.tempat.forEach((t, i) => {
-      L.polyline([[ctx.lat, ctx.lon], [t.lat, t.lon]], { color: '#16a34a', weight: 3, opacity: 0.8 }).addTo(lapisan.aman);
+      // Garis lurus tipis sementara; diganti rute jalan begitu OSRM menjawab.
+      const sementara = L.polyline([[ctx.lat, ctx.lon], [t.lat, t.lon]], { color: '#16a34a', weight: 2, opacity: 0.5, dashArray: '4 6' }).addTo(lapisan.aman);
       L.marker([t.lat, t.lon], { icon: ikonTitik('pin-aman', i + 1), zIndexOffset: 500 })
         .bindPopup(`<b>${esc(t.judul)}</b><br>${esc(t.alasan)}<br>${fmtKm(t.jarak)} ke arah ${arahKe(ctx.lat, ctx.lon, t.lat, t.lon)}`)
         .addTo(lapisan.aman);
+      const moda = modaUntuk(t);
+      const info = detail.querySelector(`[data-i="${i}"] [data-rute]`);
+      rute(moda, [ctx.lat, ctx.lon], t).then((r) => {
+        if (!masihAktif()) return;
+        lapisan.aman.removeLayer(sementara);
+        garisRute[i] = r.garis;
+        L.polyline(r.garis, { color: '#fff', weight: 7, opacity: 0.85 }).addTo(lapisan.aman);
+        L.polyline(r.garis, { color: '#16a34a', weight: 4, opacity: 0.9 })
+          .bindTooltip(`${i + 1}. ${esc(t.judul)}`, { sticky: true })
+          .addTo(lapisan.aman);
+        // Ujung jalan terdekat bisa beberapa puluh meter dari tujuan (mis. di tengah lapangan): sambung putus-putus.
+        const akhir = r.garis[r.garis.length - 1];
+        if (jarakKm(...akhir, t.lat, t.lon) > 0.03) {
+          L.polyline([akhir, [t.lat, t.lon]], { color: '#16a34a', weight: 3, dashArray: '4 6' }).addTo(lapisan.aman);
+        }
+        const banjir = banjirDiRute(r.garis);
+        if (info) {
+          info.textContent = `${moda === 'car' ? 'Berkendara' : 'Jalan kaki'} ±${Math.max(1, Math.round(r.menit))} menit, ${fmtKm(r.jarakKm)} lewat jalan`
+            + (banjir.length ? ` · ⚠ melewati ${banjir.length} titik laporan banjir` : '');
+        }
+      }).catch((err) => {
+        console.warn('rute tempat aman', err);
+        if (masihAktif() && info) info.textContent = 'Rute jalan tidak tersedia, garis putus-putus hanya menunjukkan arah';
+      });
     });
     detail.querySelectorAll('[data-i]').forEach((li) => li.addEventListener('click', () => {
-      const t = o.tempat[+li.dataset.i];
-      map.flyTo([t.lat, t.lon], 15);
+      const i = +li.dataset.i;
+      const t = o.tempat[i];
+      if (garisRute[i]) map.flyToBounds(L.latLngBounds([...garisRute[i], [t.lat, t.lon]]), { padding: [40, 40], maxZoom: 17 });
+      else map.flyTo([t.lat, t.lon], 15);
     }));
   };
   detail.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {

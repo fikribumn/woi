@@ -17,8 +17,11 @@ import { setDataZona, kosongkanZona, nilaiDi, htmlPopup, pilihBahaya } from './z
 import { pasangDarurat, resetDarurat, aturKonteksDarurat, jalankanDarurat } from './evakuasi.js';
 import { pasangUI, setMemuat, bukaHalaman, renderIkon } from './ui.js';
 import { muatTitikKumpul, bersihkanTitik, tambahPribadi } from './titikkumpul.js';
+import { muatGedung3D } from './gedung3d.js';
 import { catatGps } from './posisi.js';
 import { mulaiPantau, aturLokasiPantau } from './pantau.js';
+import { mulaiLaporan, aturLokasiLaporan } from './laporan.js';
+import { pasangPindahPosisi } from './pindah.js';
 
 const L = window.L;
 
@@ -103,6 +106,8 @@ function setLokasi(lat, lon, label) {
   bersihkanTitik();
   bukaHalaman(null);
   if (!label) cariNamaTempat(lat, lon);
+  muatGedung3D(lat, lon);
+  aturLokasiLaporan(lat, lon);
   muatSemua();
 }
 
@@ -189,6 +194,8 @@ $('#btn-refresh').addEventListener('click', muatSemua);
 pasangUI();
 pasangDarurat();
 mulaiPantau({ jalankanDarurat });
+mulaiLaporan();
+pasangPindahPosisi({ setLokasi, lokasiKini: () => lokasi });
 
 setInterval(muatSemua, AUTO_REFRESH_MS);
 

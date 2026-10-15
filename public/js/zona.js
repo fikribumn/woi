@@ -9,6 +9,7 @@ import { esc, fmtKm, jarakKm, bearing, selisihSudut, $ } from './util.js';
 import { map, kontrolLapisan } from './peta.js';
 import { tileElevasi, dariPiksel, keTile, ukuranPiksel, lerengDi, sampelTitik, DEM_MAKS_ZOOM } from './dem.js';
 import { IndeksTitik, rapatkan } from './indeks.js';
+import { temaAktif, gelapAktif } from './tema.js';
 
 const L = window.L;
 
@@ -23,11 +24,22 @@ export const BAHAYA = [
 ];
 const ID_BAHAYA = BAHAYA.slice(1).map((b) => b.id);
 export const NAMA_LEVEL = ['Aman', 'Waspada', 'Rawan', 'Bahaya'];
-// Palet sistem iOS: hijau, kuning, oranye, merah
-const GELAP = window.matchMedia('(prefers-color-scheme: dark)').matches;
-const WARNA = [[52, 199, 89, 0.32], [255, 204, 0, 0.42], [255, 149, 0, 0.48], [255, 59, 48, 0.52]]
-  .map(([r, g, b, a]) => [r, g, b, GELAP ? Math.min(0.7, a * 1.3) : a]); // lebih pekat di atas peta gelap
-export const WARNA_CSS = WARNA.map(([r, g, b]) => `rgb(${r} ${g} ${b})`);
+// Hijau, kuning, oranye, merah per tema [r, g, b, alpha]. Artinya sama di semua tema; hanya nuansanya
+// yang berbeda (Mochi lebih pastel, Stiker lebih pekat). Zona dihaluskan dengan blur CSS (.lapisan-zona).
+const PALET = {
+  awan: [[72, 199, 142, 0.3], [255, 200, 70, 0.42], [255, 140, 80, 0.5], [255, 72, 72, 0.56]],
+  mochi: [[110, 205, 150, 0.36], [255, 205, 90, 0.48], [255, 160, 110, 0.54], [255, 100, 112, 0.6]],
+  stiker: [[100, 200, 100, 0.42], [255, 196, 40, 0.52], [255, 130, 70, 0.58], [240, 60, 90, 0.64]],
+};
+let WARNA;
+export let WARNA_CSS;
+function hitungWarna() {
+  const gelap = gelapAktif();
+  WARNA = (PALET[temaAktif()] || PALET.awan)
+    .map(([r, g, b, a]) => [r, g, b, gelap ? Math.min(0.72, a * 1.25) : a]); // lebih pekat di atas peta gelap
+  WARNA_CSS = WARNA.map(([r, g, b]) => `rgb(${r} ${g} ${b})`);
+}
+hitungWarna();
 
 const PENJELASAN = {
   gabungan: 'Tingkat tertinggi dari semua bencana di tiap titik.',
@@ -96,9 +108,24 @@ function hitungLevel(d, la, lo, e, s, q) {
 
 /**
  * Laut atau darat? Utamakan sisi garis pantai OSM (DEM pesisir sering bernilai sedikit negatif di daratan,
- * misalnya tambak, rawa, atau daerah yang mengalami penurunan tanah). Tanpa data pantai: hanya laut dalam.
+ * misalnya tambak, rawa, atau daerah yang mengalami penurunan tanah). Jauh dari garis pantai yang diketahui:
+ * hanya laut dalam. Bila data garis pantai sama sekali tidak termuat (Overpass gagal), laut dangkal bisa
+ * terbaca sebagai darat, jadi semua elevasi di bawah 0 m dianggap laut.
  */
-const adalahLaut = (elev, sdc) => (sdc < 0 && elev < 10) || (sdc >= 99 && elev < -5);
+function adalahLaut(elev, sdc, d = data) {
+  if (sdc < 0 && elev < 10) return true;
+  const adaPantai = d?.pantai?.jumlah > 0;
+  return sdc >= 99 && elev < (adaPantai ? -5 : 0);
+}
+
+/** Titik di laut (v = hasil nilaiDi)? */
+export const diLaut = (v) => adalahLaut(v.elev, v.q.sdc);
+
+/**
+ * Boleh dijadikan tujuan evakuasi? Harus di darat dan di atas permukaan laut. Daratan ≤ 0 m (tambak, rawa)
+ * tidak pernah menjadi tempat aman, dan aturan ini juga menahan laut dangkal yang lolos dari deteksi.
+ */
+export const layakTujuan = (v) => !!v && !diLaut(v) && v.elev > 0;
 
 /** Jarak bertanda ke pantai: positif = darat, negatif = laut (sisi kanan arah garis pantai). */
 function jarakPantai(d, la, lo) {
@@ -191,7 +218,7 @@ async function gambarTile(kanvas, { x, y, z }) {
       const px = cx * SEL + SEL / 2;
       const elev = e[py * 256 + px];
       const sdc = bilinear(dc, px, py);
-      if (adalahLaut(elev, sdc)) continue;
+      if (adalahLaut(elev, sdc, d)) continue;
       const s = lerengDi(e, px, py, mPerPx, jarakLereng);
       const q = { dc: Math.abs(sdc), dr: bilinear(dr, px, py), er: terdekatGrid(er, px, py), df: bilinear(df, px, py) };
       const lv = hitungLevel(d, la, lo, elev, s, q)[pilihan];
@@ -225,7 +252,7 @@ const LapisanZona = L.GridLayer.extend({
 });
 
 export const lapisanZona = new LapisanZona({
-  minZoom: 10, minNativeZoom: 10, maxNativeZoom: DEM_MAKS_ZOOM, zIndex: 250, keepBuffer: 1, updateWhenIdle: true,
+  minZoom: 10, minNativeZoom: 10, maxNativeZoom: DEM_MAKS_ZOOM, zIndex: 250, keepBuffer: 1, updateWhenIdle: true, className: 'lapisan-zona',
 }).addTo(map);
 kontrolLapisan.addOverlay(lapisanZona, '<b>Zona bahaya berwarna</b>');
 
@@ -233,8 +260,13 @@ kontrolLapisan.addOverlay(lapisanZona, '<b>Zona bahaya berwarna</b>');
 const bar = document.getElementById('zona-bar');
 bar.innerHTML = `
   <div class="zona-chips">${BAHAYA.map((b) => `<button type="button" data-z="${b.id}" title="${esc(PENJELASAN[b.id])}"><i data-lucide="${b.ikon}"></i>${b.label}</button>`).join('')}</div>
-  <div class="zona-legenda glass">${NAMA_LEVEL.map((n, i) => `<span><i style="background:${WARNA_CSS[i]}"></i>${n}</span>`).join('')}<span class="zl-status" data-status></span></div>
+  <div class="zona-legenda glass">${NAMA_LEVEL.map((n, i) => `<span><i data-lv="${i}" style="background:${WARNA_CSS[i]}"></i>${n}</span>`).join('')}<span class="zl-status" data-status></span></div>
   <div class="zona-ket glass" data-ket></div>`;
+document.addEventListener('tema:ganti', () => {
+  hitungWarna();
+  bar.querySelectorAll('[data-lv]').forEach((i) => { i.style.background = WARNA_CSS[+i.dataset.lv]; });
+  lapisanZona.redraw();
+});
 L.DomEvent.disableClickPropagation(bar);
 L.DomEvent.disableScrollPropagation(bar);
 bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => pilihBahaya(b.dataset.z)));
@@ -246,7 +278,9 @@ function perbaruiKontrol() {
   else if (map.getZoom() < 10) status = 'perbesar peta';
   else status = `radius ${data.radiusKm} km`;
   $('[data-status]', bar).textContent = status;
-  $('[data-ket]', bar).textContent = `${PENJELASAN[pilihan]} Ketuk peta untuk cek titik mana pun.`;
+  const ket = `${PENJELASAN[pilihan]} Ketuk peta untuk cek titik mana pun.`;
+  $('[data-ket]', bar).textContent = ket;
+  $('.zona-legenda', bar).title = ket;
 }
 map.on('zoomend', perbaruiKontrol);
 
@@ -346,15 +380,18 @@ export async function evaluasiArea(lat, lon, radiusKm, langkahKm) {
   if (d !== data) throw new Error('Lokasi berubah');
 
   const mPerPx = ukuranPiksel(lat, z);
-  const n = Math.ceil(radiusKm / langkahKm);
+  // Sel grid dikunci ke kisi tetap (bukan berpusat di lokasi) agar GPS yang bergeser beberapa meter tidak
+  // menggeser semua sel dan mengubah area aman yang terpilih. Sel (0,0) adalah sel yang memuat lokasi.
+  const { lat0, lon0, kxK, indeks } = kisi(lat, lon, langkahKm);
+  const n = Math.ceil(radiusKm / langkahKm) + 1;
   const peta = new Map();
   const sel = [];
   for (let i = -n; i <= n; i++) {
     for (let j = -n; j <= n; j++) {
-      const jarak = Math.hypot(i, j) * langkahKm;
+      const la = lat0 + (i * langkahKm) / ky;
+      const lo = lon0 + (j * langkahKm) / kxK;
+      const jarak = jarakKm(lat, lon, la, lo);
       if (jarak > radiusKm) continue;
-      const la = lat + (i * langkahKm) / ky;
-      const lo = lon + (j * langkahKm) / kx;
       const p = keTile(la, lo, z);
       const tx = Math.floor(p.x / 256);
       const ty = Math.floor(p.y / 256);
@@ -364,14 +401,26 @@ export async function evaluasiArea(lat, lon, radiusKm, langkahKm) {
       const py = Math.floor(p.y - ty * 256);
       const elev = e[py * 256 + px];
       const q = jarakSumber(d, la, lo);
-      if (adalahLaut(elev, q.sdc)) continue;
+      // Sel laut tidak pernah masuk grid. Pemilih area aman juga menolak sel ≤ 0 m (lihat layakTujuan).
+      if (adalahLaut(elev, q.sdc, d)) continue;
       const lereng = lerengDi(e, px, py, mPerPx, 2);
       const c = { i, j, lat: la, lon: lo, elev, lereng, jarak, q, lv: hitungLevel(d, la, lo, elev, lereng, q) };
       peta.set(`${i},${j}`, c);
       sel.push(c);
     }
   }
-  return { sel, langkahKm, ambil: (i, j) => peta.get(`${i},${j}`) };
+  const ambil = (i, j) => peta.get(`${i},${j}`);
+  return { sel, langkahKm, ambil, ambilDi: (la, lo) => ambil(...indeks(la, lo)) };
+}
+
+/** Kisi tetap berjarak langkahKm; skala bujur memakai lintang yang dibulatkan agar ikut stabil. */
+export function kisi(lat, lon, langkahKm) {
+  const ky = 110.57;
+  const kxK = 111.32 * Math.cos(((Math.round(lat * 10) / 10) * Math.PI) / 180);
+  const lat0 = (Math.round((lat * ky) / langkahKm) * langkahKm) / ky;
+  const lon0 = (Math.round((lon * kxK) / langkahKm) * langkahKm) / kxK;
+  const indeks = (la, lo) => [Math.round(((la - lat0) * ky) / langkahKm), Math.round(((lo - lon0) * kxK) / langkahKm)];
+  return { lat0, lon0, kxK, indeks };
 }
 
 export function htmlPopup(v) {

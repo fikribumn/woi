@@ -3,12 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
-  <title>Waspada Bencana</title>
+  <meta name="theme-color" content="#f5f7fb">
+  <title>TERRA WOI</title>
+  <script>
+    // Terapkan tema & mode sebelum halaman digambar agar tidak berkedip (logika yang sama ada di js/tema.js).
+    (() => {
+      const r = document.documentElement;
+      let t = 'awan';
+      let m = 'otomatis';
+      try { t = localStorage.getItem('woi-tema') || t; m = localStorage.getItem('woi-mode') || m; } catch {}
+      const q = new URLSearchParams(location.search).get('tema');
+      if (q) t = q;
+      if (!['awan', 'mochi', 'stiker'].includes(t)) t = 'awan';
+      r.dataset.tema = t;
+      r.dataset.mode = m;
+      const gelap = m === 'gelap' || (m === 'otomatis' && matchMedia('(prefers-color-scheme: dark)').matches);
+      r.toggleAttribute('data-gelap', gelap);
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -31,6 +46,14 @@
       <button id="btn-gps" type="button" aria-label="Lokasi saya" title="Lokasi saya"><i data-lucide="locate-fixed"></i></button>
       <button id="btn-lapisan" type="button" aria-label="Lapisan peta" title="Lapisan peta"><i data-lucide="layers"></i></button>
       <button id="btn-refresh" type="button" aria-label="Muat ulang data" title="Muat ulang data"><i data-lucide="rotate-cw"></i></button>
+      <button id="btn-tema" type="button" aria-label="Tema tampilan" title="Tema tampilan" aria-expanded="false" aria-controls="panel-tema"><i data-lucide="palette"></i></button>
+    </div>
+
+    <div id="panel-tema" class="panel-tema glass" role="dialog" aria-label="Tema tampilan" hidden>
+      <p class="pt-judul">Tema</p>
+      <div class="pt-tema" id="pt-tema"></div>
+      <p class="pt-judul">Mode</p>
+      <div class="pt-mode" id="pt-mode" role="group" aria-label="Mode terang atau gelap"></div>
     </div>
 
     <button id="btn-darurat" type="button" class="btn-sos" aria-label="Mode darurat">
@@ -42,11 +65,15 @@
     <!-- Lembar informasi -->
     <aside class="sheet glass" id="sheet" aria-label="Informasi bahaya">
       <div class="grabber" id="grabber" role="button" tabindex="0" aria-label="Geser panel"><span></span></div>
+      <button type="button" id="btn-ciut" class="btn-ciut" aria-label="Sembunyikan panel" aria-expanded="true" aria-controls="sheet-scroll" title="Sembunyikan panel">
+        <i data-lucide="panel-left-close" class="ik-tutup"></i><i data-lucide="panel-left-open" class="ik-buka"></i>
+      </button>
 
       <div class="sheet-scroll" id="sheet-scroll">
         <!-- Beranda -->
         <div class="page page-home" id="page-home">
           <header class="home-head">
+            <p class="merek" aria-label="TERRA WOI"><span>TERRA</span> WOI</p>
             <p class="eyebrow">Lokasi diperiksa</p>
             <h1 id="lokasi-label">Menentukan lokasi…</h1>
             <div class="ringkas" id="ringkas-risiko"><span class="muted">Menganalisis bahaya di sekitar…</span></div>
@@ -54,9 +81,10 @@
 
           <div id="alert-tsunami" class="alert" hidden></div>
 
-          <div class="tiles" id="tiles"></div>
-
+          <!-- Tindakan (tempat aman, titik kumpul) didahulukan sebelum ubin informasi -->
           <div class="group" id="group-baris"></div>
+
+          <div class="tiles" id="tiles"></div>
 
           <p class="disclaimer">
             Alat bantu informasi, <strong>bukan peringatan dini resmi</strong>. Gempa tidak dapat diprediksi; penilaian lain adalah perkiraan dari data terbuka.

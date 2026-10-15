@@ -7,12 +7,13 @@
 // Di pesisir rendah, gempa kuat adalah tanda alami tsunami: tujuan harus di tanah tinggi.
 import { esc, fmtKm, arahKe, jarakKm, $ } from './util.js';
 import { map, lapisan, ikonTitik } from './peta.js';
-import { evaluasiArea, pilihBahaya, nilaiDi, NAMA_LEVEL, WARNA_CSS } from './zona.js';
+import { evaluasiArea, pilihBahaya, nilaiDi, diLaut, NAMA_LEVEL, WARNA_CSS } from './zona.js';
 import { sampelTitik } from './dem.js';
 import { renderIkon, turunkanSheet, paddingPanel } from './ui.js';
 import { titikKumpul, namaTitik, JENIS } from './titikkumpul.js';
 import { rute, lengkapiRute, grafikElevasi } from './rute.js';
 import { perbaruiPosisi, infoPosisi, htmlPosisi, pasangPosisi, saranPosisi, htmlSaranPosisi } from './posisi.js';
+import { htmlBanjirRute, tandaiBanjirRute } from './laporan.js';
 
 const L = window.L;
 const R_SEGERA = 1.5; // km
@@ -89,6 +90,7 @@ async function nilaiTitikSegera(t, k) {
   const tolak = [];
   const catatan = [];
   let penalti = 0;
+  if (diLaut(v)) return { ...t, v, tolak: ['di laut atau perairan'] };
   if (v.gempa >= 3) tolak.push('tepat di jalur sesar');
   if (v.longsor >= 2 || v.lereng >= 15) tolak.push('di lereng curam');
   if (k.ancamTsunami && v.tsunami >= 1) tolak.push('di zona genangan tsunami');
@@ -129,7 +131,7 @@ async function cariSegera(ctx, osm, k) {
 
 // ---------- Tahap 2: area pengungsian ----------
 function cariUngsi(grid, k, osm, longgar) {
-  const aman = (c) => c && c.lv.gempa <= 1 && c.lv.longsor === 0 && c.lv.tsunami === 0
+  const aman = (c) => c && c.elev > 0 && c.lv.gempa <= 1 && c.lv.longsor === 0 && c.lv.tsunami === 0
     && (longgar ? c.lv.banjir <= 1 : c.lv.banjir === 0) && c.lereng < 8
     // Pesisir rendah: tempat mengungsi juga harus aman dari tsunami susulan (tanah tinggi atau jauh dari pantai)
     && (!k.ancamTsunami || c.elev >= k.tinggiAman || c.q.dc > 10);
@@ -187,7 +189,7 @@ async function ruteKe(asal, tujuan, level, sungai, biayaTambahan, maksMenit = In
   }
   // Biaya = waktu jalan kaki (sudah dikoreksi tanjakan) + penalti menit untuk risiko sepanjang rute.
   const biaya = (r) => r.menit + biayaTambahan(r.tujuan)
-    + r.zona.lereng * 10 + r.zona.sesar * 4 + r.zona.tsunami * 10 + r.jembatan.length * 3
+    + r.zona.lereng * 10 + r.zona.sesar * 4 + r.zona.tsunami * 10 + r.jembatan.length * 3 + r.banjir.length * 15
     + (r.tanjakanMaks > 0.15 ? 4 : 0);
   for (const r of hasil) r.jauh = r.menit > maksMenit;
   // Tujuan yang terlalu jauh untuk dicapai segera hanya dipakai bila tidak ada yang lebih dekat.
@@ -262,6 +264,7 @@ function htmlRute(r, tahap, ctx, k) {
   if (r.zona.lereng > 0.05) info.push(`<div class="hd-warn">±${fmtKm(r.zona.lereng)} rute melewati lereng curam (rawan longsor/batu jatuh).</div>`);
   if (r.zona.sesar > 0.05) info.push(`<div class="hd-warn">±${fmtKm(r.zona.sesar)} rute berada ≤ 2 km dari sesar aktif; waspadai jalan retak.</div>`);
   if (k.ancamTsunami && r.zona.tsunami > 0.05) info.push(`<div class="hd-warn">±${fmtKm(r.zona.tsunami)} rute melewati zona genangan tsunami. Lewati secepatnya dan jangan berhenti di dataran rendah.</div>`);
+  if (r.banjir.length) info.push(htmlBanjirRute(r));
   if (r.zona.sungai > 0.05) info.push(`<div class="hd-warn">±${fmtKm(r.zona.sungai)} rute melewati dataran rendah dekat sungai: waspadai tanah retak, amblas, atau semburan pasir (likuefaksi).</div>`);
   const koreksi = r.faktorMedan > 1.08 ? ` · +${Math.round((r.faktorMedan - 1) * 100)}% karena tanjakan` : '';
 
@@ -374,6 +377,7 @@ function gambarPeta(fokus) {
         L.circleMarker(j.titik, { radius: 6, color: '#fff', weight: 2, fillColor: '#ff9500', fillOpacity: 1 })
           .bindTooltip(`Penyeberangan sungai${j.nama ? `: ${esc(j.nama)}` : ''} — periksa jembatan`).addTo(lapisan.evakuasi);
       }
+      tandaiBanjirRute(r, lapisan.evakuasi);
       titikBatas.push(...r.garis, [r.tujuan.lat, r.tujuan.lon]);
     }
   }
@@ -427,9 +431,8 @@ export async function jalankanEvakuasiGempa(api) {
     const sel0 = grid.ambil(0, 0);
     const sudahAman = !!sel0 && ungsi.aman(sel0);
     // Titik kumpul resmi/OSM/pribadi yang berada di sel aman ikut menjadi kandidat pengungsian.
-    const kx = 111.32 * Math.cos((ctx.lat * Math.PI) / 180);
     const tkAman = titikKumpul().filter((t) => t.jenis !== 'potensial' && t.jarak <= R_UNGSI).map((t) => {
-      const c = grid.ambil(Math.round(((t.lat - ctx.lat) * 110.57) / LANGKAH_UNGSI), Math.round(((t.lon - ctx.lon) * kx) / LANGKAH_UNGSI));
+      const c = grid.ambilDi(t.lat, t.lon);
       return c && ungsi.aman(c) ? { ...c, lat: t.lat, lon: t.lon, jarak: t.jarak, tk: t, diAtasSungai: Number.isFinite(c.q?.er) && c.q.dr < 3 ? c.elev - c.q.er : null } : null;
     }).filter(Boolean).slice(0, 2);
 
