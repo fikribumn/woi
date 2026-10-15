@@ -4,6 +4,7 @@ import { esc, getJson, setCard, fakta, fmtKm, jarakKeGaris, arahKe, levelMaks, c
 import { RADIUS } from './config.js';
 import { garisJarak } from './peta.js';
 import { siapLaporan, laporanDekat, ATRIBUSI } from './laporan.js';
+import { sampelTitik } from './dem.js';
 
 /**
  * Prakiraan debit sungai GloFAS (Open-Meteo Flood API, grid ±5 km): debit hari ini, puncak 7 hari ke depan,
@@ -38,10 +39,9 @@ async function lerengHalus(lat, lon) {
   const d = 300;
   const dLat = d / 111320;
   const dLon = d / (111320 * Math.cos((lat * Math.PI) / 180));
-  const lats = [lat, lat + dLat, lat - dLat, lat, lat];
-  const lons = [lon, lon, lon, lon + dLon, lon - dLon];
-  const r = await getJson(`https://api.open-meteo.com/v1/elevation?latitude=${lats.join(',')}&longitude=${lons.join(',')}`);
-  const [c, n, s, e, w] = r.elevation;
+  const titik = [[lat, lon], [lat + dLat, lon], [lat - dLat, lon], [lat, lon + dLon], [lat, lon - dLon]];
+  // Dari tile DEM Terrarium (sudah di-cache aplikasi), bukan API elevasi Open-Meteo yang berkuota harian
+  const [c, n, s, e, w] = await Promise.all(titik.map(([la, lo]) => sampelTitik(la, lo, 13).then((x) => x.elev)));
   const derajat = (Math.atan(Math.hypot((n - s) / (2 * d), (e - w) / (2 * d))) * 180) / Math.PI;
   return { elevasi: c, derajat };
 }

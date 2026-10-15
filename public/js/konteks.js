@@ -1,6 +1,7 @@
 // Data bersama untuk satu lokasi. Tiap sumber diambil sekali (sebagai Promise) lalu dipakai banyak modul.
 import { getJson, jarakKm } from './util.js';
 import { RADIUS } from './config.js';
+import { sampelTitik } from './dem.js';
 
 // Data yang jarang berubah (geologi, OSM, elevasi) dipakai ulang saat lokasi sama (mis. refresh otomatis).
 let statis = null;
@@ -53,10 +54,13 @@ export async function gridElevasi(lat, lon, radiusKm, n = 9) {
       titik.push({ i, j, lat: lat0 + dy / ky, lon: lon0 + dx / kx });
     }
   }
+  // Elevasi dari tile DEM Terrarium (AWS Open Data, di-cache di browser), bukan API elevasi Open-Meteo:
+  // grid ini butuh ±80 titik per lokasi dan menghabiskan kuota harian Open-Meteo dengan cepat.
+  // Zoom tile disesuaikan jarak antartitik (z12 ±38 m/piksel untuk grid lokal, z11 untuk grid luas).
+  const z = langkah > 1.5 ? 11 : 12;
   const semua = [...titik, { lat, lon }];
-  const r = await getJson(`https://api.open-meteo.com/v1/elevation?latitude=${semua.map((t) => t.lat.toFixed(5)).join(',')}`
-    + `&longitude=${semua.map((t) => t.lon.toFixed(5)).join(',')}`);
-  titik.forEach((t, k) => { t.elev = r.elevation[k]; });
+  const elev = await Promise.all(semua.map((t) => sampelTitik(t.lat, t.lon, z).then((s) => s.elev)));
+  titik.forEach((t, k) => { t.elev = elev[k]; });
   const at = (i, j) => titik[Math.max(0, Math.min(n - 1, i)) * n + Math.max(0, Math.min(n - 1, j))].elev;
   const m = langkah * 1000;
   for (const t of titik) {
@@ -66,7 +70,7 @@ export async function gridElevasi(lat, lon, radiusKm, n = 9) {
     t.jarak = jarakKm(lat, lon, t.lat, t.lon);
   }
   const tengah = Math.floor(n / 2);
-  const pusat = { lat, lon, jarak: 0, elev: r.elevation[titik.length], lereng: titik[tengah * n + tengah].lereng };
+  const pusat = { lat, lon, jarak: 0, elev: elev[titik.length], lereng: titik[tengah * n + tengah].lereng };
   return { titik, pusat, langkahKm: langkah };
 }
 
