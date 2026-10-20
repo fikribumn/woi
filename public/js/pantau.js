@@ -6,6 +6,8 @@ import { perkiraanMMI, labelMMI, parseBmkg } from './gempa.js';
 import { map, ikonTitik } from './peta.js';
 import { renderIkon } from './ui.js';
 import { infoPosisi, saranPosisi } from './posisi.js';
+import { izinNotifikasi, siapkanNotifikasi, mintaIzinNotifikasi, kirimNotifikasi, lokasiKeLatar, tandaiDiLatar } from './notifikasi.js';
+import { diAplikasi } from './native.js';
 
 const L = window.L;
 const INTERVAL = 30000;
@@ -30,6 +32,7 @@ function sudahDilihat() {
 function tandaiDilihat(id) {
   const s = [...sudahDilihat(), id].slice(-50);
   try { localStorage.setItem(KUNCI, JSON.stringify(s)); } catch { /* cukup di sesi ini */ }
+  tandaiDiLatar(id);
 }
 const idKejadian = (g) => `${g.waktu}|${g.lat.toFixed(2)}|${g.lon.toFixed(2)}`;
 
@@ -81,6 +84,7 @@ async function cek() {
 export function mulaiPantau(opsi) {
   api = opsi;
   pasangPil();
+  siapkanNotifikasi().then(renderPil);
   if (!berjalan) {
     berjalan = true;
     setInterval(cek, INTERVAL);
@@ -91,7 +95,10 @@ export function mulaiPantau(opsi) {
 export function aturLokasiPantau(l) {
   const baru = !lokasi || jarakKm(lokasi.lat, lokasi.lon, l.lat, l.lon) > 0.05;
   lokasi = l;
-  if (baru) cek();
+  if (baru) {
+    cek();
+    lokasiKeLatar(l);
+  }
   // ?demo=gempa|tsunami: jalankan simulasi sekali setelah analisis pertama
   if (demo) {
     simulasi(demo);
@@ -147,10 +154,7 @@ function sirene(nyala) {
 }
 
 function notifikasi(d, judul) {
-  try {
-    if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return;
-    new Notification(`${d.simulasi ? '[SIMULASI] ' : ''}${judul}`, { body: `${d.tempat} · ${fmtKm(d.jarak)} dari lokasi Anda`, tag: idKejadian(d), requireInteraction: d.level === 'bahaya' });
-  } catch { /* notifikasi tidak didukung */ }
+  kirimNotifikasi({ judul: `${d.simulasi ? '[SIMULASI] ' : ''}${judul}`, isi: `${d.tempat} · ${fmtKm(d.jarak)} dari lokasi Anda`, tag: idKejadian(d), penting: d.level === 'bahaya' });
 }
 
 function langkah(d) {
@@ -284,18 +288,19 @@ function renderPil() {
   const menu = $('.pl-menu', el);
   if (menu.hidden) return;
   const t = status.terakhir;
-  const izin = 'Notification' in window ? Notification.permission : 'unsupported';
+  const izin = izinNotifikasi;
+  const saatTutup = diAplikasi ? ' Saat aplikasi ditutup, BMKG tetap diperiksa ±15 menit sekali.' : ' (saat tab tidak dilihat)';
   menu.innerHTML = `
     <p><b>Pemantauan live</b><br><span class="meta">Memeriksa gempa & potensi tsunami dari BMKG tiap ${INTERVAL / 1000} detik untuk ${esc(lokasi?.label || 'lokasi Anda')}. Peringatan muncul bila guncangan diperkirakan terasa (MMI ≥ 4) atau ada potensi tsunami dan Anda di pesisir.</span></p>
     ${status.galat ? `<p class="hd-warn">Gagal memeriksa: ${esc(status.galat)}</p>` : ''}
     <p class="meta">${t ? `Gempa terakhir ≤ 500 km: <b>M${t.mag.toFixed(1)}</b> ${esc(t.tempat)}, ${fmtKm(t.jarak)}, ${waktuRelatif(t.waktu)} (MMI ${labelMMI(t.mmi)})` : 'Belum ada gempa dalam 1 jam terakhir dalam 500 km.'}</p>
-    ${izin === 'default' ? '<button type="button" data-pl-notif>Aktifkan notifikasi</button>' : izin === 'granted' ? '<p class="meta">✓ Notifikasi aktif (saat tab tidak dilihat).</p>' : izin === 'denied' ? '<p class="meta">Notifikasi diblokir di pengaturan browser.</p>' : ''}
+    ${izin === 'default' ? '<button type="button" data-pl-notif>Aktifkan notifikasi</button>' : izin === 'granted' ? `<p class="meta">✓ Notifikasi aktif.${saatTutup}</p>` : izin === 'denied' ? `<p class="meta">Notifikasi diblokir di pengaturan ${diAplikasi ? 'HP' : 'browser'}.</p>` : ''}
     <div class="pl-sim"><span class="meta">Uji / latihan:</span>
       <button type="button" data-pl-sim="gempa">Simulasi gempa</button>
       <button type="button" data-pl-sim="tsunami">Simulasi tsunami</button>
     </div>`;
   menu.querySelector('[data-pl-notif]')?.addEventListener('click', async () => {
-    await Notification.requestPermission();
+    await mintaIzinNotifikasi();
     renderPil();
   });
   menu.querySelectorAll('[data-pl-sim]').forEach((b) => b.addEventListener('click', () => {

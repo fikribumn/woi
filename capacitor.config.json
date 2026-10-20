@@ -4,5 +4,15 @@
   "webDir": "public",
   "android": {
     "allowMixedContent": false
+  },
+  "plugins": {
+    "BackgroundRunner": {
+      "label": "id.terrawoi.app.pantau",
+      "src": "runners/pantau-gempa.js",
+      "event": "cekGempa",
+      "repeat": true,
+      "interval": 15,
+      "autoStart": true
+    }
   }
 }

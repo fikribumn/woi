@@ -16,6 +16,7 @@ const MIME = {
   '.geojson': 'application/geo+json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.woff2': 'font/woff2',
   '.ico': 'image/x-icon',
 };
 
@@ -40,7 +41,7 @@ function sendJson(res, status, body) {
 }
 
 function serveStatic(req, res) {
-  const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+  const urlPath = decodeURIComponent(new URL(req.url.replace(/^\/+/, '/'), 'http://x').pathname);
   const filePath = path.normalize(path.join(PUBLIC_DIR, urlPath === '/' ? 'index.html' : urlPath));
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
@@ -103,7 +104,7 @@ function sambungReload(req, res) {
 
 let RUTE = {};
 const server = http.createServer(async (req, res) => {
-  const u = new URL(req.url, 'http://x');
+  const u = new URL(req.url.replace(/^\/+/, '/'), 'http://x');
   if (DEV && u.pathname === '/__reload') return sambungReload(req, res);
   const handler = RUTE[u.pathname];
   if (!handler) return serveStatic(req, res);

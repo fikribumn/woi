@@ -141,7 +141,7 @@ Indikator **LIVE** (kanan atas peta; di HP kiri bawah) memeriksa BMKG (`autogemp
 | MMI 4–5 | Peringatan oranye "Gempa terasa" |
 | MMI 3 | Pemberitahuan tanpa sirene |
 
-Langkah segera di layar peringatan menyesuaikan posisi Anda (mis. di lantai atas: jangan pakai lift; tsunami di lantai yang sudah cukup tinggi: tetap di atas). Tombol evakuasi membuka Mode Darurat. Kejadian yang sudah diperingatkan tidak diulang. Notifikasi browser bisa diaktifkan dari menu LIVE (muncul saat tab tidak dilihat; belum bekerja saat browser ditutup karena butuh server push).
+Langkah segera di layar peringatan menyesuaikan posisi Anda (mis. di lantai atas: jangan pakai lift; tsunami di lantai yang sudah cukup tinggi: tetap di atas). Tombol evakuasi membuka Mode Darurat. Kejadian yang sudah diperingatkan tidak diulang. Notifikasi bisa diaktifkan dari menu LIVE. Di browser, notifikasi muncul saat tab tidak dilihat. Di aplikasi Android, notifikasi tetap muncul walau aplikasi ditutup (pemeriksaan ±15 menit sekali).
 
 **Simulasi untuk demo/latihan:** menu LIVE → *Simulasi gempa* / *Simulasi tsunami*, atau URL `?lat=-0.95&lon=100.36&demo=tsunami`. Layar simulasi selalu berlabel **SIMULASI · bukan kejadian nyata**.
 
@@ -184,9 +184,11 @@ Di Android Studio, tekan ▶ Run untuk memasang aplikasi ke HP (aktifkan *USB de
 Tanpa membuka Android Studio: `npm run android:apk` menghasilkan `android/app/build/outputs/apk/debug/app-debug.apk` (butuh `JAVA_HOME` dan `ANDROID_HOME`).
 
 Catatan versi aplikasi:
-- Izin lokasi diminta saat pertama kali memakai GPS.
-- Notifikasi browser belum tersedia di aplikasi. Peringatan tetap muncul di layar saat aplikasi terbuka.
-- Leaflet, Lucide, dan font masih dimuat dari CDN, jadi aplikasi butuh internet saat dibuka.
+- Izin lokasi diminta saat pertama kali memakai GPS. Izin notifikasi diaktifkan dari menu **LIVE**.
+- **Notifikasi saat aplikasi ditutup:** `public/runners/pantau-gempa.js` dijalankan Android (Capacitor Background Runner) ±15 menit sekali. Runner memeriksa BMKG dan mengirim notifikasi bila gempa baru diperkirakan terasa (MMI ≥ 4) di lokasi terakhir, atau berpotensi tsunami untuk lokasi pesisir. Jadwalnya diatur Android dan bisa lebih jarang saat mode hemat baterai. Peringatan seketika (hitungan detik) butuh push dari server, lihat di bawah.
+- Leaflet, Lucide, dan Poppins disimpan di `public/vendor/`, jadi aplikasi tetap terbuka tanpa internet. Peta dasar, data bencana, dan rute tetap butuh internet.
+
+**Kapan butuh server?** Hanya untuk peringatan seketika saat aplikasi ditutup. Android membatasi tugas latar belakang paling cepat 15 menit, jadi notifikasi dalam hitungan detik harus dikirim lewat push (Firebase Cloud Messaging) dari server kecil yang terus memantau BMKG.
 
 ## Struktur
 
@@ -200,6 +202,7 @@ public/js/
   main.js              Orkestrasi & pemilihan lokasi
   sumber.js            Pengambil data /api/* (MAGMA, ESDM, FIRMS, Overpass, PetaBencana, BNPB), dipakai server & aplikasi
   native.js            Mode aplikasi Android: /api/* dijalankan di perangkat lewat HTTP native
+  notifikasi.js        Notifikasi (Notification API di browser, LocalNotifications di aplikasi) & pemantau latar belakang
   konteks.js           Data bersama per lokasi (cuaca, geologi, OSM, grid elevasi)
   peta.js              Leaflet, lapisan ESDM, radius per bahaya
   config.js            Radius & ambang tiap bahaya
@@ -217,6 +220,8 @@ public/js/
   posisi.js            Posisi vertikal: altitude GPS (koreksi geoid) atau pilihan lantai, saran per lantai
   dem.js indeks.js     Pembaca tile elevasi Terrarium & indeks spasial titik terdekat
   data-gunung.js       Koordinat 69 gunung api + status cadangan
+public/runners/pantau-gempa.js  Pemantau BMKG latar belakang aplikasi Android (±15 menit)
+public/vendor/              Leaflet, Lucide, font Poppins (lokal, agar bisa dibuka tanpa internet)
 public/data/subduksi.json   Jalur subduksi (dibuat dengan tools/buat-subduksi.js)
 public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan tools/buat-geoid.js)
 ```

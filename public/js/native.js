@@ -5,12 +5,11 @@
 const cap = window.Capacitor;
 export const diAplikasi = !!(cap?.isNativePlatform?.() ?? ['android', 'ios'].includes(cap?.getPlatform?.()));
 
-const httpNative = (opsi) => (cap.Plugins?.CapacitorHttp?.request
-  ? cap.Plugins.CapacitorHttp.request(opsi)
-  : cap.nativePromise('CapacitorHttp', 'request', opsi));
+/** Memanggil metode plugin native. Halaman tidak memuat @capacitor/core, jadi lewat bridge langsung. */
+export const panggilNative = (plugin, metode, opsi = {}) => cap.nativePromise(plugin, metode, opsi);
 
 async function permintaanNative(url, { method = 'GET', body, timeout = 30000 }) {
-  const res = await httpNative({
+  const res = await panggilNative('CapacitorHttp', 'request', {
     url,
     method,
     data: body,
