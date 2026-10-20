@@ -14,6 +14,10 @@ export const MODE = [
 
 const root = document.documentElement;
 const sistemGelap = window.matchMedia('(prefers-color-scheme: dark)');
+// Aplikasi Android memberi tahu mode sistem lewat window.woiModeSistem() karena activity tidak dibuat ulang
+// saat mode gelap berubah; null = ikuti media query.
+let sistemGelapAsli = null;
+const sistemSedangGelap = () => sistemGelapAsli ?? sistemGelap.matches;
 
 export const temaAktif = () => root.dataset.tema || 'awan';
 export const modeAktif = () => root.dataset.mode || 'otomatis';
@@ -25,7 +29,7 @@ function simpan(kunci, nilai) {
 
 function terapkan() {
   const m = modeAktif();
-  root.toggleAttribute('data-gelap', m === 'gelap' || (m === 'otomatis' && sistemGelap.matches));
+  root.toggleAttribute('data-gelap', m === 'gelap' || (m === 'otomatis' && sistemSedangGelap()));
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(root).getPropertyValue('--bg').trim() || '#f5f7fb';
   document.dispatchEvent(new CustomEvent('tema:ganti', { detail: { tema: temaAktif(), gelap: gelapAktif() } }));
@@ -46,3 +50,7 @@ export function aturMode(id) {
 }
 
 sistemGelap.addEventListener('change', () => { if (modeAktif() === 'otomatis') terapkan(); });
+window.woiModeSistem = (gelap) => {
+  sistemGelapAsli = !!gelap;
+  if (modeAktif() === 'otomatis' && gelapAktif() !== sistemGelapAsli) terapkan();
+};

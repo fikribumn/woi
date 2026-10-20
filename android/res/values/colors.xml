@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Sama dengan token bg tema Awan di public/style.css -->
+    <color name="latar">#F5F7FB</color>
+    <color name="merek">#2F6BFF</color>
+    <color name="ikon_latar">#2F6BFF</color>
+</resources>

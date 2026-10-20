@@ -5,6 +5,7 @@
 import { esc, jarakKm, arahKe, fmtKm, getJson, waktuRelatif } from './util.js';
 import { map, kontrolLapisan } from './peta.js';
 import { renderIkon } from './ui.js';
+import { notifikasi } from './platform.js';
 
 const L = window.L;
 const INTERVAL = 5 * 60e3;
@@ -140,9 +141,7 @@ function cekPeringatan() {
   const l = baru[0];
   const pesan = `Laporan banjir ${fmtKm(l.jarak)} ke arah ${arahKe(lokasi.lat, lokasi.lon, l.lat, l.lon)}${l.kedalaman ? `, ±${l.kedalaman} cm` : ''} · ${waktuRelatif(Date.parse(l.waktu))}`;
   tampilkanToast(`${baru.length > 1 ? `${baru.length} laporan banjir baru di sekitar Anda. Terdekat: ` : ''}${pesan}`, l);
-  if ('Notification' in window && Notification.permission === 'granted' && document.visibilityState !== 'visible') {
-    new Notification('Laporan banjir di dekat Anda', { body: pesan, tag: `banjir-${l.id}` });
-  }
+  notifikasi('Laporan banjir di dekat Anda', pesan, { tag: `banjir-${l.id}` });
 }
 
 function tampilkanToast(teks, l) {

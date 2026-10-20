@@ -2,7 +2,7 @@
 
 *(sebelumnya: Waspada Bencana)*
 
-Web app berbasis peta untuk melihat potensi bencana alam di sekitar lokasi Anda (Indonesia), lengkap dengan kondisi geologi, jarak ke sumber bahaya, dan rekomendasi tempat paling aman.
+Web app berbasis peta untuk melihat potensi bencana alam di sekitar lokasi Anda (Indonesia), lengkap dengan kondisi geologi, jarak ke sumber bahaya, dan rekomendasi tempat paling aman. Tersedia juga sebagai **aplikasi Android** (lihat [Aplikasi Android](#aplikasi-android)).
 
 ## Tampilan
 
@@ -81,6 +81,21 @@ Data dari [PetaBencana.id](https://petabencana.id) (CC BY-NC 4.0, non-komersial,
 - **Rute evakuasi** (Mode Darurat & gempa) diberi penalti +15 menit per titik banjir yang dilewati. Titik itu ditandai di peta dan diberi peringatan. Tempat Paling Aman juga menandai rute yang melewati laporan banjir.
 
 Laporan berasal dari warga dan hanya ada kalau ada yang melapor, jadi "tidak ada laporan" tidak berarti aman.
+
+## Siaga: kontak darurat, kabari keluarga, tas siaga 🎒
+
+Grup **Siaga** di beranda (`siaga.js`). Semua data pribadi hanya disimpan di perangkat (localStorage):
+- **Kontak Darurat**: tombol telepon langsung ke 112, 119 (ambulans), 113 (pemadam), 110 (polisi), 115 (Basarnas), 117 (BNPB), dan 123 (PLN), ditambah RS, pemadam, dan polisi terdekat dari OSM (dengan nomor telepon bila ada di OSM).
+- **Kabari keluarga**: tombol *Saya aman* dan *Butuh bantuan* membagikan status, waktu, dan tautan lokasi lewat WhatsApp/SMS/aplikasi lain. Tombol yang sama ada di layar peringatan gempa.
+- **Kontak keluarga**: simpan hingga 10 nomor, lalu telepon atau kirim SMS "Saya aman" + lokasi dengan sekali ketuk. SMS tetap terkirim walau data internet putus.
+- **Tas Siaga Bencana**: checklist 18 barang (mengacu panduan BNPB) dengan progres, dan pengingat periksa ulang tiap 6 bulan.
+
+## Status koneksi & pemakaian pertama
+
+- Kartu yang gagal dimuat menampilkan penyebab yang mudah dipahami (tanpa internet / server sibuk) dan tombol **Coba lagi**. Saat offline muncul banner, dan data dimuat ulang otomatis begitu koneksi kembali.
+- Waktu pembaruan terakhir tampil di bawah ringkasan risiko. Ubin yang masih memuat ditampilkan sebagai kerangka berkilau.
+- Pemakaian pertama (tanpa `?lat&lon` di URL) dibuka dengan layar sambutan yang menjelaskan izin lokasi dan notifikasi sebelum dialog izin sistem muncul.
+- Font, Leaflet, dan ikon Lucide dibundel di `public/vendor/` sehingga aplikasi tetap terbuka tanpa CDN.
 
 ## Pindah posisi 🧭
 
@@ -164,18 +179,46 @@ npm start          # biasa
 npm run dev        # pengembangan: browser memuat ulang otomatis saat berkas berubah
 ```
 
-Buka http://localhost:8080. Proyek ini butuh Node.js 18+ dan tidak memerlukan `npm install`.
+Buka http://localhost:8080. Proyek ini butuh Node.js 18+ dan tidak memerlukan `npm install`. Untuk APK, lihat [Membangun APK](#membangun-apk).
 
 Lokasi bisa diatur lewat GPS, kolom pencarian, tombol **Analisis lokasi ini** pada popup peta, atau URL `?lat=-6.88&lon=107.62&zona=tsunami`. URL ini juga bisa dibagikan. 
+
+## Aplikasi Android
+
+Folder `android/` berisi aplikasi Android native kecil (±400 KB, tanpa library pihak ketiga) yang membungkus halaman web di WebView:
+
+- Halaman (`public/`) disalin ke aset APK dan disajikan dari `https://appassets.androidplatform.net`, jadi aplikasi terbuka tanpa internet.
+- Tidak ada server Node di HP. Endpoint `/api/*` dijalankan di halaman memakai logika yang sama dengan server (`public/js/api-inti.mjs`), dan sumber yang memblokir CORS diambil lewat proxy native (`/__proxy`, hanya untuk host sumber data yang terdaftar). Hasil Overpass di-cache 7 hari di Cache Storage.
+- Fitur native lewat `window.WoiAndroid` (`public/js/platform.js` ↔ `Jembatan.java`): izin lokasi, notifikasi sistem (Android 13+ meminta izin), lembar berbagi, layar tetap menyala selama mode darurat dan peringatan, warna bilah sistem mengikuti tema, dan tombol kembali (menutup panel/halaman dulu, lalu meminimalkan aplikasi).
+- **Pantau saat aplikasi ditutup** (`PantauGempa.java`): tiap ±15 menit memeriksa BMKG dan memberi notifikasi alarm bila gempa baru diperkirakan terasa di lokasi terakhir (MMI ≥ 4) atau berpotensi tsunami saat lokasi di pesisir. Bisa dimatikan di menu LIVE. Android bisa menunda jadwal saat mode hemat daya.
+- Tautan telepon, SMS, Google Maps, dan situs luar dibuka di aplikasi yang sesuai.
+- minSdk 24 (Android 7.0), targetSdk 35, tata letak tepi-ke-tepi, ikon adaptif (termasuk ikon bertema Android 13).
+
+### Membangun APK
+
+```bash
+npm run apk        # sama dengan: bash android/build.sh
+```
+
+Hasil: `android/build/terra-woi-<versi>.apk`. Skrip tidak memakai Gradle; yang dibutuhkan hanya JDK 17+ dan salah satu dari:
+- Android SDK (`ANDROID_HOME`) dengan build-tools dan `platforms/android-35`, atau
+- paket Ubuntu/Debian: `sudo apt install android-sdk-build-tools apksigner zipalign` (`android.jar` diunduh otomatis).
+
+Build pertama membuat **keystore rilis** di `android/keystore/` (diabaikan git). Simpan keystore dan `kata-sandi.txt` baik-baik: pembaruan APK harus ditandatangani dengan kunci yang sama, kalau tidak pengguna harus mencopot aplikasi lama dulu. Untuk memakai keystore lain: `KEYSTORE=/path/kunci.jks KS_PASS=... npm run apk` (alias kunci `terra-woi`).
+
+Versi aplikasi diatur di `android/AndroidManifest.xml` (`versionCode` dinaikkan setiap rilis, `versionName` untuk ditampilkan).
 
 ## Struktur
 
 ```
-server.js              Server statis + proxy/cache untuk sumber yang memblokir CORS
+server.js              Server statis + endpoint /api/* (memakai public/js/api-inti.mjs)
 public/index.html
 public/style.css
 public/js/
-  main.js              Orkestrasi & pemilihan lokasi
+  main.js              Orkestrasi & pemilihan lokasi, sambutan pertama, status koneksi
+  api-inti.mjs         Logika endpoint /api/* (MAGMA, ESDM, FIRMS, Overpass, PetaBencana, BNPB), dipakai server & Android
+  platform.js          Penghubung browser/Android: /api/* di aplikasi, notifikasi, berbagi, tombol kembali
+  siaga.js             Kontak darurat, kabari keluarga, Tas Siaga
   konteks.js           Data bersama per lokasi (cuaca, geologi, OSM, grid elevasi)
   peta.js              Leaflet, lapisan ESDM, radius per bahaya
   config.js            Radius & ambang tiap bahaya
@@ -195,6 +238,16 @@ public/js/
   data-gunung.js       Koordinat 69 gunung api + status cadangan
 public/data/subduksi.json   Jalur subduksi (dibuat dengan tools/buat-subduksi.js)
 public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan tools/buat-geoid.js)
+public/vendor/              Leaflet 1.9.4, Lucide 0.460.0, font Poppins (dibundel agar jalan tanpa CDN)
+android/
+  build.sh                  Build APK tanpa Gradle (aapt2 → javac → d8/dx → zipalign → apksigner)
+  AndroidManifest.xml       Paket id.terrawoi.app, izin, versi
+  src/id/terrawoi/app/
+    MainActivity.java       WebView, penyaji aset, proxy native, izin, tepi-ke-tepi, tombol kembali
+    Jembatan.java           window.WoiAndroid untuk halaman web
+    PantauGempa.java        Pemantauan gempa BMKG di latar (JobScheduler)
+    Notif.java              Kanal & pengiriman notifikasi
+  res/                      Ikon, tema terang/gelap, layar pembuka
 ```
 
 ### Endpoint server
@@ -222,5 +275,7 @@ Sumber lain diakses langsung dari browser: BMKG, USGS, Open-Meteo (cuaca, elevas
 - Aplikasi ini bukan sistem peringatan dini resmi. Ikuti arahan BMKG, PVMBG, dan BPBD.
 
 ## Lisensi data
+
+Pustaka yang dibundel: Leaflet (BSD-2-Clause), Lucide (ISC), Poppins (SIL OFL 1.1).
 
 OpenStreetMap (ODbL), GEM Global Active Faults (CC BY-SA 4.0), Macrostrat (CC BY 4.0), NASA FIRMS, Open-Meteo (CC BY 4.0), Copernicus CAMS, BMKG, Badan Geologi/ESDM.

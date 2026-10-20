@@ -1284,3 +1284,171 @@ h3.sub { font-size: 13px; font-weight: 600; text-transform: uppercase; color: va
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
 }
+
+/* =========================================================
+   Kesiapsiagaan, status koneksi, sambutan, dan penyesuaian aplikasi Android
+   ========================================================= */
+.diperbarui { margin: 4px 0 0; font-size: 12px; color: var(--text-3); }
+.diperbarui:empty { display: none; }
+.judul-grup { margin: 18px 6px 6px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-2); }
+
+.banner-offline {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--orange) 16%, var(--surface));
+  font-size: 13px;
+  line-height: 1.45;
+}
+.banner-offline svg { flex: none; width: 18px; height: 18px; color: var(--t-orange); margin-top: 1px; }
+
+/* Tombol "Coba lagi" pada kartu yang gagal dimuat */
+.btn-coba {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-coba svg { width: 15px; height: 15px; }
+.summary .btn-coba { display: flex; width: fit-content; }
+.galat-teknis { display: block; margin-top: 8px; font-size: 11px; color: var(--text-3); word-break: break-word; }
+
+/* Ubin yang masih memuat: kerangka berkilau, bukan "…" */
+.tile.memuat .tile-val, .tile.memuat .tile-sub {
+  color: transparent;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--fill) 0%, var(--fill-2) 50%, var(--fill) 100%) 0 0 / 200% 100%;
+  animation: kilau 1.3s ease-in-out infinite;
+}
+.tile.memuat .tile-val { width: 55%; min-height: 19px; }
+.tile.memuat .tile-sub { width: 90%; min-height: 30px; }
+@keyframes kilau { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* Kontak darurat */
+.kd-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 4px 0 6px; }
+.kd-tombol {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "ikon no" "ikon nama" "ket ket";
+  column-gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: var(--bw) solid var(--tile-line);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 0.12s ease;
+}
+.kd-tombol:active { transform: scale(0.97); }
+.kd-tombol .row-ikon { grid-area: ikon; width: 36px; height: 36px; border-radius: 10px; }
+.kd-no { grid-area: no; font-size: 20px; font-weight: 800; line-height: 1.1; letter-spacing: 0.01em; }
+.kd-nama { grid-area: nama; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.kd-ket { grid-area: ket; margin-top: 6px; font-size: 11.5px; line-height: 1.3; color: var(--text-2); }
+.kd-grid .kd-tombol:first-child { grid-column: 1 / -1; background: var(--red); border-color: transparent; color: #fff; }
+.kd-grid .kd-tombol:first-child :is(.kd-nama, .kd-ket) { color: rgb(255 255 255 / 0.85); }
+.kd-grid .kd-tombol:first-child .row-ikon { background: rgb(255 255 255 / 0.22); }
+.kd-kabar { margin: 8px 0 4px; }
+.kd-kabar button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1; }
+.kd-kabar svg { width: 18px; height: 18px; }
+.kd-kabar .kd-aman { background: var(--green); color: #fff; }
+.kd-kabar .kd-tolong { background: color-mix(in srgb, var(--red) 14%, var(--surface)); color: var(--t-red); }
+.kd-keluarga li, .list li:has(.kd-aksi) { align-items: center; }
+.kd-aksi { display: flex; gap: 6px; flex: none; }
+.kd-aksi :is(a, button) {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--blue);
+  cursor: pointer;
+}
+.kd-aksi svg { width: 18px; height: 18px; }
+.kd-aksi button[data-hapus] { color: var(--text-3); }
+.kd-form { display: flex; gap: 6px; margin: 8px 0 0; }
+.kd-form input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: var(--bw) solid var(--sep);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+}
+.kd-form input[name="no"] { flex: 0.9; }
+.kd-form button { flex: none; width: 44px; height: 44px; display: grid; place-items: center; border: 0; border-radius: 12px; background: var(--blue); color: var(--on-accent); cursor: pointer; }
+.kd-form button svg { width: 19px; height: 19px; }
+
+/* Tas siaga */
+.ts-progres { height: 10px; margin: 4px 0 6px; border-radius: 999px; background: var(--fill); overflow: hidden; }
+.ts-progres span { display: block; height: 100%; border-radius: inherit; background: var(--green); transition: width 0.3s ease; }
+.ts-info { margin: 0 0 4px; }
+.ts-list li { padding: 0; }
+.ts-list label { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 11px 14px; cursor: pointer; }
+.ts-list input { flex: none; width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--green); }
+.ts-list label > span { display: flex; flex-direction: column; gap: 1px; }
+.ts-list input:checked + span .ts-nama { color: var(--text-2); text-decoration: line-through; text-decoration-color: var(--text-3); }
+.hd-aksi button:has(svg) { display: inline-flex; align-items: center; gap: 8px; }
+.hd-aksi button svg { width: 17px; height: 17px; }
+
+/* Pemantauan latar (aplikasi Android) */
+.pl-latar { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; padding: 10px; border-radius: 12px; background: var(--fill); cursor: pointer; }
+.pl-latar input { flex: none; width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--blue); }
+
+/* Sambutan pertama kali */
+.sambut {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-panel);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.sambut::backdrop { background: rgb(0 0 0 / 0.45); }
+.sb-isi { padding: 24px 22px 18px; display: flex; flex-direction: column; gap: 12px; }
+.sb-isi h2 { margin: 0; font-size: 23px; line-height: 1.2; letter-spacing: -0.02em; }
+.sb-isi .merek { margin: 0; }
+.sb-poin { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 14px; font-size: 14px; line-height: 1.45; }
+.sb-poin li { display: flex; gap: 12px; align-items: flex-start; }
+.sb-poin .row-ikon { width: 34px; height: 34px; border-radius: 10px; }
+.sb-mulai, .sb-lewat { width: 100%; min-height: 48px; border: 0; border-radius: 14px; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer; }
+.sb-mulai { background: var(--blue); color: var(--on-accent); margin-top: 4px; }
+.sb-lewat { background: transparent; color: var(--blue); font-size: 15px; font-weight: 500; min-height: 40px; }
+[data-tema="stiker"] .sambut { border: 2px solid var(--ink); }
+
+/* Layar kecil: saat sheet hampir penuh, kontrol peta disembunyikan agar tidak menimpa isi sheet.
+   Tombol Darurat tetap ada, pindah ke pojok kanan bawah. */
+@media (max-width: 899px) {
+  .pil-live, .map-buttons, .btn-sos, .float-top { transition: opacity 0.2s ease; }
+  .sheet-penuh :is(.pil-live, .map-buttons, .float-top, .panel-tema, .btn-reposisi) { opacity: 0; pointer-events: none; }
+  .sheet-penuh .btn-sos { bottom: max(16px, env(safe-area-inset-bottom)); z-index: 1002; box-shadow: 0 6px 20px rgb(255 59 48 / 0.35); }
+  .sheet-penuh .sheet-scroll { padding-bottom: 84px; }
+}
+
+/* Aplikasi Android: tanpa sorotan ketuk biru bawaan WebView, dan teks antarmuka tidak bisa terpilih saat menekan lama */
+.di-aplikasi { -webkit-tap-highlight-color: transparent; }
+.di-aplikasi :is(button, .tile, .row, .kd-tombol, .pl-tombol, .grabber) { -webkit-user-select: none; user-select: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

@@ -9,6 +9,7 @@ import { rute, lengkapiRute, grafikElevasi } from './rute.js';
 import { jalankanEvakuasiGempa, batalGempa } from './evakuasi-gempa.js';
 import { htmlBanjirRute, tandaiBanjirRute } from './laporan.js';
 import { segarkanGps, perbaruiPosisi, htmlPosisi, pasangPosisi, saranPosisi, htmlSaranPosisi } from './posisi.js';
+import { layarTetapNyala } from './platform.js';
 
 const kepala = (p, judul) => `<div class="hd-head"><b><span class="row-ikon" style="--c:${p.warna}"><i data-lucide="${p.ikon}"></i></span>${judul}</b><button type="button" class="hd-tutup" aria-label="Tutup">✕</button></div>`;
 
@@ -152,6 +153,7 @@ let indeksRute = 0;
 export async function jalankanDarurat(idBahaya) {
   const profil = PROFIL[idBahaya];
   if (!profil) return;
+  layarTetapNyala(true); // rute dan langkah evakuasi harus tetap terlihat
   daruratAktif = idBahaya;
   const id = ++jalanDarurat;
   const usang = () => id !== jalanDarurat;
@@ -309,7 +311,13 @@ function tampilkan(idBahaya, profil, ctx, hasil, u, sudahAman, sub, x, osm) {
   map.fitBounds(L.latLngBounds([[ctx.lat, ctx.lon], [t.lat, t.lon], ...r.garis]), { ...paddingPanel(panel), maxZoom: 16 });
 }
 
+/** Tutup panel mode darurat (tombol tutup atau tombol kembali Android). */
+export function tutupDarurat() {
+  tutup();
+}
+
 function tutup() {
+  layarTetapNyala(false);
   daruratAktif = null;
   jalanDarurat++;
   batalGempa();

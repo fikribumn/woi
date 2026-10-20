@@ -6,6 +6,8 @@ import { perkiraanMMI, labelMMI, parseBmkg } from './gempa.js';
 import { map, ikonTitik } from './peta.js';
 import { renderIkon } from './ui.js';
 import { infoPosisi, saranPosisi } from './posisi.js';
+import { kabari } from './siaga.js';
+import { izinNotifikasi, mintaIzinNotifikasi, notifikasi as kirimNotifikasi, layarTetapNyala, pantauLatarAktif, aturPantauLatar, diAplikasi } from './platform.js';
 
 const L = window.L;
 const INTERVAL = 30000;
@@ -147,10 +149,7 @@ function sirene(nyala) {
 }
 
 function notifikasi(d, judul) {
-  try {
-    if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return;
-    new Notification(`${d.simulasi ? '[SIMULASI] ' : ''}${judul}`, { body: `${d.tempat} · ${fmtKm(d.jarak)} dari lokasi Anda`, tag: idKejadian(d), requireInteraction: d.level === 'bahaya' });
-  } catch { /* notifikasi tidak didukung */ }
+  kirimNotifikasi(`${d.simulasi ? '[SIMULASI] ' : ''}${judul}`, `${d.tempat} · ${fmtKm(d.jarak)} dari lokasi Anda`, { tag: idKejadian(d), penting: d.level === 'bahaya' });
 }
 
 function langkah(d) {
@@ -215,6 +214,7 @@ function peringatkan(d) {
       <div class="lv-aksi">
         <button type="button" class="lv-utama" data-lv-evakuasi>${d.tsunami ? 'Rute ke tempat tinggi' : 'Langkah & rute evakuasi'}</button>
         <button type="button" data-lv-aman>Saya aman</button>
+        <button type="button" data-lv-kabar aria-label="Kabari keluarga"><i data-lucide="share-2"></i></button>
         <button type="button" data-lv-senyap aria-label="Matikan suara"><i data-lucide="volume-x"></i></button>
       </div>
       <p class="lv-sumber">Sumber: ${d.simulasi ? 'simulasi untuk latihan' : 'BMKG'}. Perkiraan guncangan dihitung dari magnitudo & jarak. Ikuti arahan resmi BMKG dan BPBD. Darurat: 112.</p>
@@ -225,6 +225,7 @@ function peringatkan(d) {
 
   // Sirene & getar hanya untuk tingkat waspada/bahaya
   if (d.level !== 'info') {
+    layarTetapNyala(true);
     sirene(true);
     navigator.vibrate?.([600, 300, 600, 300, 600]);
   }
@@ -239,6 +240,7 @@ function peringatkan(d) {
 
   $('[data-lv-senyap]', el).onclick = () => sirene(false);
   $('[data-lv-aman]', el).onclick = tutupPeringatan;
+  $('[data-lv-kabar]', el).onclick = (e) => kabari('aman', e.currentTarget);
   $('[data-lv-evakuasi]', el).onclick = () => {
     tutupPeringatan({ simpanPeta: true });
     api.jalankanDarurat(d.jenis);
@@ -250,6 +252,7 @@ function peringatkan(d) {
 function tutupPeringatan(opsi = {}) {
   sirene(false);
   navigator.vibrate?.(0);
+  layarTetapNyala(false);
   document.querySelector('.lv-overlay')?.remove();
   if (!opsi.simpanPeta) lapisanLive.clearLayers();
   peringatanAktif = null;
@@ -284,18 +287,25 @@ function renderPil() {
   const menu = $('.pl-menu', el);
   if (menu.hidden) return;
   const t = status.terakhir;
-  const izin = 'Notification' in window ? Notification.permission : 'unsupported';
+  const izin = izinNotifikasi();
+  const latar = diAplikasi ? pantauLatarAktif() : null;
   menu.innerHTML = `
     <p><b>Pemantauan live</b><br><span class="meta">Memeriksa gempa & potensi tsunami dari BMKG tiap ${INTERVAL / 1000} detik untuk ${esc(lokasi?.label || 'lokasi Anda')}. Peringatan muncul bila guncangan diperkirakan terasa (MMI ≥ 4) atau ada potensi tsunami dan Anda di pesisir.</span></p>
     ${status.galat ? `<p class="hd-warn">Gagal memeriksa: ${esc(status.galat)}</p>` : ''}
     <p class="meta">${t ? `Gempa terakhir ≤ 500 km: <b>M${t.mag.toFixed(1)}</b> ${esc(t.tempat)}, ${fmtKm(t.jarak)}, ${waktuRelatif(t.waktu)} (MMI ${labelMMI(t.mmi)})` : 'Belum ada gempa dalam 1 jam terakhir dalam 500 km.'}</p>
-    ${izin === 'default' ? '<button type="button" data-pl-notif>Aktifkan notifikasi</button>' : izin === 'granted' ? '<p class="meta">✓ Notifikasi aktif (saat tab tidak dilihat).</p>' : izin === 'denied' ? '<p class="meta">Notifikasi diblokir di pengaturan browser.</p>' : ''}
+    ${izin === 'default' ? '<button type="button" data-pl-notif>Aktifkan notifikasi</button>' : izin === 'granted' ? `<p class="meta">✓ Notifikasi aktif${diAplikasi ? '' : ' (saat tab tidak dilihat)'}.</p>` : izin === 'denied' ? `<p class="meta">Notifikasi diblokir di pengaturan ${diAplikasi ? 'Android' : 'browser'}.</p>` : ''}
+    ${latar === null ? '' : `<label class="pl-latar"><input type="checkbox" data-pl-latar ${latar ? 'checked' : ''}><span><b>Pantau saat aplikasi ditutup</b><br><span class="meta">Cek BMKG ±15 menit sekali dan beri notifikasi bila gempa terasa di lokasi terakhir Anda.</span></span></label>`}
     <div class="pl-sim"><span class="meta">Uji / latihan:</span>
       <button type="button" data-pl-sim="gempa">Simulasi gempa</button>
       <button type="button" data-pl-sim="tsunami">Simulasi tsunami</button>
     </div>`;
   menu.querySelector('[data-pl-notif]')?.addEventListener('click', async () => {
-    await Notification.requestPermission();
+    await mintaIzinNotifikasi();
+    renderPil();
+  });
+  menu.querySelector('[data-pl-latar]')?.addEventListener('change', async (e) => {
+    if (e.target.checked && izinNotifikasi() !== 'granted') await mintaIzinNotifikasi();
+    aturPantauLatar(e.target.checked);
     renderPil();
   });
   menu.querySelectorAll('[data-pl-sim]').forEach((b) => b.addEventListener('click', () => {

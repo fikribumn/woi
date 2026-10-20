@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TERRA WOI</string>
+    <string name="kanal_peringatan">Peringatan gempa &amp; tsunami</string>
+    <string name="kanal_peringatan_ket">Gempa yang diperkirakan terasa di lokasi Anda dan potensi tsunami dari BMKG</string>
+    <string name="kanal_info">Informasi bencana</string>
+    <string name="kanal_info_ket">Laporan banjir warga di sekitar dan pemberitahuan lain</string>
+</resources>

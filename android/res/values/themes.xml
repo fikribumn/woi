@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema mengikuti mode sistem (values-night) agar prefers-color-scheme di WebView sesuai -->
+    <style name="Tema" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/latar</item>
+        <item name="android:colorAccent">@color/merek</item>
+        <item name="android:statusBarColor">@color/latar</item>
+        <item name="android:navigationBarColor">@color/latar</item>
+    </style>
+</resources>

@@ -118,14 +118,24 @@ export function setCard(id, { badge, level, summary, detail, radius }) {
   if (r) r.textContent = radius || '';
 }
 
+// Galat jaringan dari browser/WebView ("Failed to fetch", "NetworkError", "ERR_INTERNET_DISCONNECTED", ...)
+const GALAT_JARINGAN = /failed to fetch|fetch failed|networkerror|load failed|err_|network request failed/i;
+
 export function setCardError(id, err) {
+  const offline = !navigator.onLine || GALAT_JARINGAN.test(err.message);
   const sibuk = /overpass|HTTP 5\d\d|HTTP 429|timeout|aborted/i.test(err.message);
+  const coba = '<button type="button" class="btn-coba" data-coba-lagi><i data-lucide="rotate-cw"></i>Coba lagi</button>';
   setCard(id, {
-    badge: 'Tidak tersedia',
+    badge: offline ? 'Offline' : 'Tidak tersedia',
     level: '',
-    summary: sibuk ? `Server data sedang sibuk. Coba muat ulang beberapa saat lagi. <span class="muted">(${esc(err.message)})</span>` : `Data tidak dapat dimuat: ${esc(err.message)}`,
+    summary: offline
+      ? `Tidak ada koneksi internet. Periksa data seluler atau Wi-Fi, lalu coba lagi. ${coba}`
+      : sibuk
+        ? `Server data sedang sibuk. Coba lagi beberapa saat lagi. ${coba}<span class="meta galat-teknis">${esc(err.message)}</span>`
+        : `Data belum bisa dimuat. ${coba}<span class="meta galat-teknis">${esc(err.message)}</span>`,
     detail: '',
   });
+  document.dispatchEvent(new CustomEvent('kartu:galat', { detail: { id } }));
 }
 
 export const fakta = (k, v, sub = '') => `<div class="fact"><div class="k">${k}</div><div class="v">${v}</div>${sub ? `<div class="meta">${sub}</div>` : ''}</div>`;

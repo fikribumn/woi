@@ -1,4 +1,6 @@
 // Orkestrasi: menentukan lokasi, membuat konteks data bersama, menjalankan semua modul.
+// platform.js diimpor paling awal: di aplikasi Android ia memasang penangan /api/* sebelum modul lain mengambil data.
+import { diAplikasi, aturLokasiLatar, daftarKembali, tanganiKembali, mintaIzinNotifikasi, izinNotifikasi } from './platform.js';
 import { $, esc, getJson, setCardError } from './util.js';
 import { DEFAULT_LOC, AUTO_REFRESH_MS } from './config.js';
 import { map, setPusat, bersihkanLapisan } from './peta.js';
@@ -14,14 +16,15 @@ import { muatBangunan } from './bangunan.js';
 import { muatJarak } from './jarak.js';
 import { muatAman } from './aman.js';
 import { setDataZona, kosongkanZona, nilaiDi, htmlPopup, pilihBahaya } from './zona.js';
-import { pasangDarurat, resetDarurat, aturKonteksDarurat, jalankanDarurat } from './evakuasi.js';
-import { pasangUI, setMemuat, bukaHalaman, renderIkon } from './ui.js';
+import { pasangDarurat, resetDarurat, aturKonteksDarurat, jalankanDarurat, tutupDarurat } from './evakuasi.js';
+import { pasangUI, setMemuat, bukaHalaman, renderIkon, kembaliUI } from './ui.js';
 import { muatTitikKumpul, bersihkanTitik, tambahPribadi } from './titikkumpul.js';
 import { muatGedung3D } from './gedung3d.js';
 import { catatGps } from './posisi.js';
 import { mulaiPantau, aturLokasiPantau } from './pantau.js';
 import { mulaiLaporan, aturLokasiLaporan } from './laporan.js';
 import { pasangPindahPosisi } from './pindah.js';
+import { pasangSiaga, aturFaskes } from './siaga.js';
 
 const L = window.L;
 
@@ -41,7 +44,8 @@ let lokasi = { ...DEFAULT_LOC };
 let aktif = null;
 
 function setLoading() {
-  document.querySelectorAll('.card').forEach((c) => {
+  // Kartu data-statis (kontak, tas siaga) tidak bergantung pada data lokasi, jadi tidak dikosongkan.
+  document.querySelectorAll('.card:not([data-statis])').forEach((c) => {
     $('[data-badge]', c).textContent = '…';
     $('[data-badge]', c).dataset.level = '';
     $('[data-summary]', c).innerHTML = '<span class="muted">Memuat…</span>';
@@ -69,6 +73,7 @@ async function muatSemua() {
   const nilai = (r) => (r.status === 'fulfilled' ? r.value : null);
   const [osm, cuaca] = await Promise.all([ctx.osm.catch(() => null), ctx.cuaca.catch(() => null)]);
   if (ctx.batal()) return;
+  aturFaskes(osm);
   try {
     await setDataZona({
       lat: ctx.lat,
@@ -86,13 +91,17 @@ async function muatSemua() {
   if (ctx.batal()) return;
   aturKonteksDarurat(ctx, peta);
   const sub = nilai(peta.gempa)?.subduksiTerdekat;
+  const pesisir = !!nilai(peta.tsunami)?.pesisir;
   aturLokasiPantau({
     lat: ctx.lat, lon: ctx.lon, label: lokasi.label,
-    pesisir: !!nilai(peta.tsunami)?.pesisir, sub, tinggiAman: sub && sub.km < 300 ? 30 : 20,
+    pesisir, sub, tinggiAman: sub && sub.km < 300 ? 30 : 20,
   });
+  aturLokasiLatar({ lat: ctx.lat, lon: ctx.lon, label: lokasi.label, pesisir });
   await Promise.allSettled([muatJarak(ctx, peta), muatAman(ctx, peta)]);
   renderIkon();
-  if (!ctx.batal()) setMemuat(false);
+  if (ctx.batal()) return;
+  setMemuat(false);
+  $('#diperbarui').textContent = `Diperbarui ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`;
 }
 
 function setLokasi(lat, lon, label) {
@@ -125,15 +134,56 @@ async function cariNamaTempat(lat, lon) {
 
 function pakaiGps() {
   if (!navigator.geolocation) return setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, DEFAULT_LOC.label);
-  $('#lokasi-label').textContent = 'Meminta izin lokasi…';
+  $('#lokasi-label').textContent = 'Mencari lokasi Anda…';
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       catatGps(pos.coords);
       setLokasi(pos.coords.latitude, pos.coords.longitude);
     },
-    () => setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, `${DEFAULT_LOC.label} — izin lokasi ditolak`),
+    (err) => setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, `${DEFAULT_LOC.label} — ${err.code === 1 ? 'izin lokasi ditolak' : 'GPS tidak merespons'}`),
     { enableHighAccuracy: true, timeout: 15000, maximumAge: 300000 },
   );
+}
+
+// ----- Sambutan pertama kali: jelaskan izin sebelum dialog izin sistem muncul -----
+function sudahDisambut() {
+  try { return localStorage.getItem('woi-sambut') === '1'; } catch { return true; }
+}
+function sambut() {
+  const d = $('#dialog-sambut');
+  renderIkon(d);
+  d.addEventListener('cancel', (e) => e.preventDefault()); // wajib memilih salah satu tombol
+  d.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-sambut]');
+    if (!b) return;
+    try { localStorage.setItem('woi-sambut', '1'); } catch { /* tampil lagi lain kali */ }
+    d.close();
+    if (b.dataset.sambut === 'izinkan') {
+      pakaiGps();
+      if (izinNotifikasi() === 'default' && diAplikasi) await mintaIzinNotifikasi();
+    } else {
+      setLokasi(DEFAULT_LOC.lat, DEFAULT_LOC.lon, DEFAULT_LOC.label);
+      $('#input-cari').focus();
+    }
+  });
+  d.showModal();
+}
+
+// ----- Koneksi: penanda offline & muat ulang otomatis saat tersambung lagi -----
+function pasangKoneksi() {
+  const banner = $('#banner-offline');
+  const perbarui = () => { banner.hidden = navigator.onLine; };
+  window.addEventListener('offline', perbarui);
+  window.addEventListener('online', () => {
+    perbarui();
+    muatSemua();
+  });
+  document.addEventListener('kartu:galat', perbarui);
+  perbarui();
+  // Tombol "Coba lagi" di kartu yang gagal dimuat
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-coba-lagi]')) muatSemua();
+  });
 }
 
 // ----- Pencarian lokasi (Open-Meteo Geocoding) -----
@@ -196,6 +246,20 @@ pasangDarurat();
 mulaiPantau({ jalankanDarurat });
 mulaiLaporan();
 pasangPindahPosisi({ setLokasi, lokasiKini: () => lokasi });
+pasangSiaga({ lokasi: () => lokasi });
+pasangKoneksi();
+// Tombol kembali Android: penutup modul (mode darurat, dsb.) dulu, lalu panel & halaman UI.
+window.woiKembali = () => tanganiKembali(kembaliUI);
+daftarKembali(() => {
+  if ($('#hasil-darurat').hidden) return false;
+  tutupDarurat();
+  return true;
+});
+daftarKembali(() => {
+  if (!$('.lv-overlay')) return false;
+  $('.lv-overlay [data-lv-aman]').click();
+  return true;
+});
 
 setInterval(muatSemua, AUTO_REFRESH_MS);
 
@@ -204,5 +268,6 @@ if (qs.get('zona')) pilihBahaya(qs.get('zona'));
 const qLat = parseFloat(qs.get('lat'));
 const qLon = parseFloat(qs.get('lon'));
 if (Number.isFinite(qLat) && Number.isFinite(qLon)) setLokasi(qLat, qLon);
+else if (!sudahDisambut()) sambut();
 else pakaiGps();
 if (qs.get('darurat')) jalankanDarurat(qs.get('darurat'));

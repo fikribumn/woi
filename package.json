@@ -1,11 +1,12 @@
 {
   "name": "terra-woi",
   "version": "0.1.0",
-  "description": "Pemantau potensi gempa bumi, hujan/longsor, dan gunung api di sekitar lokasi pengguna (Indonesia)",
+  "description": "Pemantau potensi bencana alam di sekitar lokasi pengguna (Indonesia): web dan aplikasi Android",
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js --dev"
+    "dev": "node --watch server.js --dev",
+    "apk": "bash android/build.sh"
   },
   "engines": {
     "node": ">=18"

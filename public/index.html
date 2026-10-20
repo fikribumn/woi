@@ -21,10 +21,9 @@
       r.toggleAttribute('data-gelap', gelap);
     })();
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <!-- Font & pustaka dibundel di vendor/ agar aplikasi tetap terbuka saat sinyal lemah atau tanpa internet -->
+  <link rel="stylesheet" href="vendor/fonts/poppins.css">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -77,7 +76,13 @@
             <p class="eyebrow">Lokasi diperiksa</p>
             <h1 id="lokasi-label">Menentukan lokasi…</h1>
             <div class="ringkas" id="ringkas-risiko"><span class="muted">Menganalisis bahaya di sekitar…</span></div>
+            <p class="diperbarui" id="diperbarui" aria-live="polite"></p>
           </header>
+
+          <div id="banner-offline" class="banner-offline" role="status" hidden>
+            <i data-lucide="wifi-off" aria-hidden="true"></i>
+            <span><b>Tidak ada koneksi internet.</b> Data yang tampil mungkin sudah usang. Nomor darurat dan Tas Siaga tetap bisa dipakai.</span>
+          </div>
 
           <div id="alert-tsunami" class="alert" hidden></div>
 
@@ -85,6 +90,9 @@
           <div class="group" id="group-baris"></div>
 
           <div class="tiles" id="tiles"></div>
+
+          <h2 class="judul-grup">Siaga</h2>
+          <div class="group" id="group-siaga"></div>
 
           <p class="disclaimer">
             Alat bantu informasi, <strong>bukan peringatan dini resmi</strong>. Gempa tidak dapat diprediksi; penilaian lain adalah perkiraan dari data terbuka.
@@ -95,6 +103,19 @@
         </div>
 
         <!-- Halaman detail (diisi modul) -->
+        <article class="page card" id="card-kontak" data-statis hidden>
+          <header><h2>Kontak Darurat</h2><span class="badge" data-badge>112</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+        </article>
+
+        <article class="page card" id="card-tas" data-statis hidden>
+          <header><h2>Tas Siaga Bencana</h2><span class="badge" data-badge>…</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+          <footer class="src">Mengacu panduan Tas Siaga Bencana BNPB</footer>
+        </article>
+
         <article class="page card" id="card-aman" hidden>
           <header><h2>Tempat Paling Aman</h2><span class="badge" data-badge>…</span></header>
           <p class="radius" data-radius></p>
@@ -183,6 +204,21 @@
     </aside>
   </main>
 
+  <dialog id="dialog-sambut" class="sambut" aria-labelledby="sambut-judul">
+    <div class="sb-isi">
+      <p class="merek"><span>TERRA</span> WOI</p>
+      <h2 id="sambut-judul">Kenali bahaya di sekitar Anda</h2>
+      <ul class="sb-poin">
+        <li><span class="row-ikon" style="--c:var(--blue)"><i data-lucide="map-pin"></i></span><span><b>Izin lokasi</b> dipakai untuk menilai gempa, tsunami, banjir, longsor, dan gunung api di tempat Anda. Lokasi tidak dikirim ke server kami.</span></li>
+        <li><span class="row-ikon" style="--c:var(--red)"><i data-lucide="bell-ring"></i></span><span><b>Notifikasi</b> memberi tahu bila gempa terasa atau ada potensi tsunami di dekat Anda.</span></li>
+        <li><span class="row-ikon" style="--c:var(--green)"><i data-lucide="route"></i></span><span>Tombol <b>Darurat</b> mencari tempat aman terdekat beserta rutenya.</span></li>
+      </ul>
+      <p class="meta">Alat bantu informasi, bukan peringatan dini resmi. Ikuti arahan BMKG dan BPBD.</p>
+      <button type="button" class="sb-mulai" data-sambut="izinkan">Izinkan lokasi &amp; mulai</button>
+      <button type="button" class="sb-lewat" data-sambut="lewati">Nanti saja, pilih lokasi manual</button>
+    </div>
+  </dialog>
+
   <dialog id="dialog-darurat" class="action-sheet">
     <div class="as-group">
       <div class="as-title">
@@ -194,8 +230,8 @@
     <button type="button" data-batal class="as-batal">Batal</button>
   </dialog>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/lucide.min.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

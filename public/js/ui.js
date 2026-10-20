@@ -2,7 +2,8 @@
 // sheet bawah yang bisa diseret di layar kecil, dan ikon Lucide.
 import { $, esc, URUTAN_LEVEL } from './util.js';
 import { map, kontrolLapisan } from './peta.js';
-import { TEMA, MODE, temaAktif, modeAktif, aturTema, aturMode } from './tema.js';
+import { TEMA, MODE, temaAktif, modeAktif, aturTema, aturMode, gelapAktif } from './tema.js';
+import { warnaBilahSistem } from './platform.js';
 
 export const KARTU = [
   { id: 'card-gempa', judul: 'Gempa', ikon: 'activity', warna: 'var(--red)' },
@@ -19,7 +20,11 @@ const BARIS = [
   { id: 'card-aman', judul: 'Tempat Paling Aman', ikon: 'shield-check', warna: 'var(--green)' },
   { id: 'card-jarak', judul: 'Jarak ke Sumber Bahaya', ikon: 'ruler', warna: 'var(--purple)' },
 ];
-const SEMUA = [...KARTU, ...BARIS];
+const SIAGA = [
+  { id: 'card-kontak', judul: 'Kontak Darurat & Kabari Keluarga', ikon: 'phone-call', warna: 'var(--red)' },
+  { id: 'card-tas', judul: 'Tas Siaga Bencana', ikon: 'backpack', warna: 'var(--orange)' },
+];
+const SEMUA = [...KARTU, ...BARIS, ...SIAGA];
 
 export const ikon = (nama, kelas = '') => `<i data-lucide="${nama}" class="${kelas}"></i>`;
 export function renderIkon(root = document) {
@@ -44,11 +49,13 @@ function bangunBeranda() {
       <span class="tile-val" data-tv>…</span>
       <span class="tile-sub" data-ts>Memuat</span>
     </button>`).join('');
-  $('#group-baris').innerHTML = BARIS.map((k) => `
+  const baris = (daftar) => daftar.map((k) => `
     <button type="button" class="row" data-tile="${k.id}" style="--c:${k.warna}">
       <span class="row-ikon">${ikon(k.ikon)}</span>
       <span class="row-body"><span class="row-title">${esc(k.judul)}</span><span class="row-val" data-tv>…</span>${ikon('chevron-right', 'row-chev')}</span>
     </button>`).join('');
+  $('#group-baris').innerHTML = baris(BARIS);
+  $('#group-siaga').innerHTML = baris(SIAGA);
 
   // Judul tiap halaman detail: ikon + tombol kembali
   for (const k of SEMUA) {
@@ -70,6 +77,7 @@ function sinkronUbin(id) {
   tile.dataset.level = badge.dataset.level || '';
   if (!badge.dataset.level) tile.removeAttribute('data-level');
   $('[data-tv]', tile).textContent = badge.textContent;
+  tile.classList.toggle('memuat', badge.textContent === '…');
   const sub = $('[data-ts]', tile);
   if (sub) sub.textContent = kalimatPertama(teksPolos($('[data-summary]', card).innerHTML));
   ringkasRisiko();
@@ -146,7 +154,13 @@ let posisi = 'setengah';
 function aturSheet(nama, px) {
   posisi = nama;
   const tinggi = px ?? Math.round(window.innerHeight * POSISI[nama]);
-  document.documentElement.style.setProperty('--sheet-visible', `${tinggi}px`);
+  aturTinggiSheet(tinggi);
+}
+
+/** Saat sheet hampir penuh, kontrol peta yang mengambang disembunyikan agar tidak menimpa isi sheet. */
+function aturTinggiSheet(px) {
+  document.documentElement.style.setProperty('--sheet-visible', `${px}px`);
+  document.documentElement.classList.toggle('sheet-penuh', kecil() && px > window.innerHeight * 0.7);
 }
 
 function pasangSeret() {
@@ -166,7 +180,7 @@ function pasangSeret() {
   grab.addEventListener('pointermove', (e) => {
     if (!seret) return;
     const h = Math.min(window.innerHeight * 0.92, Math.max(90, awalTinggi + (awalY - e.clientY)));
-    document.documentElement.style.setProperty('--sheet-visible', `${h}px`);
+    aturTinggiSheet(h);
   });
   const selesai = (e) => {
     if (!seret) return;
@@ -277,6 +291,54 @@ function cegahKlikPeta(el) {
   window.L.DomEvent.disableScrollPropagation(el);
 }
 
+/**
+ * Tombol kembali Android, setelah penutup yang didaftarkan modul lain: tutup panel/popup yang terbuka,
+ * kembali dari halaman detail ke ringkasan, lalu turunkan sheet. false = tidak ada yang ditutup.
+ */
+export function kembaliUI() {
+  const terbuka = document.querySelector('dialog[open]:not(#dialog-sambut)');
+  if (terbuka) {
+    terbuka.close();
+    return true;
+  }
+  if (!panelTema().hidden) {
+    tutupPanelTema();
+    return true;
+  }
+  const lapisanEl = kontrolLapisan.getContainer();
+  if (lapisanEl.classList.contains('leaflet-control-layers-expanded')) {
+    kontrolLapisan.collapse();
+    return true;
+  }
+  const menu = document.querySelector('.pl-menu:not([hidden]), .panel-pindah:not([hidden])');
+  if (menu) {
+    menu.hidden = true;
+    return true;
+  }
+  if (map._popup?.isOpen()) {
+    map.closePopup();
+    return true;
+  }
+  if ($('#page-home').hidden) {
+    bukaHalaman(null);
+    return true;
+  }
+  if (kecil() && posisi !== 'intip') {
+    aturSheet('intip');
+    return true;
+  }
+  return false;
+}
+
+function pasangBilahSistem() {
+  const terapkan = () => {
+    const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    warnaBilahSistem(bg, gelapAktif());
+  };
+  document.addEventListener('tema:ganti', terapkan);
+  terapkan();
+}
+
 export function setMemuat(aktif) {
   $('#btn-refresh').classList.toggle('berputar', aktif);
 }
@@ -288,6 +350,7 @@ export function pasangUI() {
   pasangCiut();
   pasangTombolPeta();
   pasangPemilihTema();
+  pasangBilahSistem();
   // Di HP sheet mulai dari posisi intip (lokasi + ringkasan risiko) agar peta tidak tertutup
   aturSheet('intip');
   renderIkon();
