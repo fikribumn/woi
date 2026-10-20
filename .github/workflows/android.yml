@@ -1,0 +1,58 @@
+# Membangun APK & AAB TERRA WOI.
+# - Dijalankan manual (Actions → Android → Run workflow) atau otomatis saat tag versi didorong (mis. v1.1.0).
+# - Tag versi juga membuat GitHub Release berisi APK & AAB; aplikasi memeriksa rilis ini untuk pemberitahuan versi baru.
+# Butuh secrets repositori (Settings → Secrets and variables → Actions):
+#   KEYSTORE_B64  isi android/keystore/terra-woi.jks dalam base64 (base64 -w0 terra-woi.jks)
+#   KS_PASS       isi android/keystore/kata-sandi.txt
+name: Android
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK (platform 35 & build-tools 35)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Pasang keystore rilis
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Secret KEYSTORE_B64 belum diatur. Tanpa kunci yang sama, APK tidak bisa memperbarui versi yang sudah terpasang."
+            exit 1
+          fi
+          mkdir -p android/keystore
+          echo "$KEYSTORE_B64" | base64 -d > android/keystore/terra-woi.jks
+
+      - name: Build APK & AAB
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0" bash android/build.sh aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terra-woi
+          path: |
+            android/build/*.apk
+            android/build/*.aab
+
+      - name: Rilis GitHub
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" android/build/*.apk android/build/*.aab --title "TERRA WOI $GITHUB_REF_NAME" --generate-notes

@@ -21,8 +21,9 @@ Mode **Otomatis / Terang / Gelap** ada di panel yang sama. Setiap tema punya set
 Tata letaknya:
 - Peta penuh layar, label peta di lapisan terpisah di atas zona berwarna.
 - Di desktop, **panel kaca** mengambang di kiri dengan tinggi menyesuaikan isinya. Panel bisa **diciutkan** (tombol di pojok kanan atasnya) menjadi kartu kecil berisi lokasi dan ringkasan risiko. Pilihan ini diingat, dan panel otomatis diciutkan saat Mode Darurat dibuka. Di HP, panel menjadi **bottom sheet** yang mulai dari posisi intip, bisa ditarik ke setengah atau penuh, dan otomatis turun saat peta digeser.
-- Beranda mendahulukan tindakan (Titik Kumpul, Tempat Paling Aman, Jarak), lalu **ubin ringkasan** per bencana dengan warna tingkat risiko. Ketuk ubin untuk membuka halaman detail, lalu kembali lewat tombol "‹ Ringkasan".
-- Chip pemilih zona, legenda, dan tombol peta (lokasi, lapisan, muat ulang) mengambang di atas peta. Tombol merah **Darurat** ada di kanan bawah.
+- Beranda dibuat seringkas mungkin: **satu kartu status** (Aman / Waspada / Rawan / Bahaya beserta bahaya utamanya), **tiga aksi** (Tempat aman, Titik kumpul, Siaga), lalu hanya **bahaya yang perlu perhatian** (tingkat sedang ke atas). Bahaya lain dan jarak ke sumber bahaya dilipat di "Lihat semua bahaya". Ketuk ubin untuk membuka halaman detail.
+- Semua fitur persiapan dikumpulkan di halaman **Siaga** agar beranda tidak penuh.
+- Di atas peta hanya ada pencarian, satu chip zona (ketuk untuk memilih bencana lain), legenda ringkas, tombol Lokasi, Lapisan, dan **⋯ Lainnya** (pindah posisi, muat ulang, tema), serta tombol merah **Darurat**.
 - Ikon memakai Lucide, dan warna memakai palet sistem iOS.
 
 ## Peta zona bahaya berwarna
@@ -82,13 +83,36 @@ Data dari [PetaBencana.id](https://petabencana.id) (CC BY-NC 4.0, non-komersial,
 
 Laporan berasal dari warga dan hanya ada kalau ada yang melapor, jadi "tidak ada laporan" tidak berarti aman.
 
-## Siaga: kontak darurat, kabari keluarga, tas siaga 🎒
+## Halaman Siaga 🎒
 
-Grup **Siaga** di beranda (`siaga.js`). Semua data pribadi hanya disimpan di perangkat (localStorage):
-- **Kontak Darurat**: tombol telepon langsung ke 112, 119 (ambulans), 113 (pemadam), 110 (polisi), 115 (Basarnas), 117 (BNPB), dan 123 (PLN), ditambah RS, pemadam, dan polisi terdekat dari OSM (dengan nomor telepon bila ada di OSM).
-- **Kabari keluarga**: tombol *Saya aman* dan *Butuh bantuan* membagikan status, waktu, dan tautan lokasi lewat WhatsApp/SMS/aplikasi lain. Tombol yang sama ada di layar peringatan gempa.
-- **Kontak keluarga**: simpan hingga 10 nomor, lalu telepon atau kirim SMS "Saya aman" + lokasi dengan sekali ketuk. SMS tetap terkirim walau data internet putus.
-- **Tas Siaga Bencana**: checklist 18 barang (mengacu panduan BNPB) dengan progres, dan pengingat periksa ulang tiap 6 bulan.
+Semua data pribadi hanya disimpan di perangkat (localStorage):
+
+| Fitur | Isi |
+|---|---|
+| **Kontak Darurat & Kabari Keluarga** (`siaga.js`) | Telepon langsung 112, 119, 113, 110, 115, 117, 123, plus RS/pemadam/polisi terdekat dari OSM. Tombol *Saya aman* / *Butuh bantuan* membagikan status + tautan lokasi. Simpan hingga 10 nomor keluarga; kirim SMS ke satu atau semua sekaligus (SMS tetap jalan tanpa internet). |
+| **SOS** (`sos.js`) | Untuk orang yang terjebak: peluit digital 3 kHz, senter (aplikasi Android), dan layar berkedip dengan pola SOS; telepon 112; SMS "butuh bantuan" + lokasi ke semua keluarga; tips bertahan. Juga ada di lembar Darurat dan pintasan layar utama. |
+| **Rencana Keluarga** (`rencana.js`) | Dua titik kumpul keluarga (dekat rumah & di luar lingkungan) yang ditandai di peta, penjemput anak, kontak luar kota, kebutuhan khusus. Bisa dibagikan ke semua anggota. |
+| **Tas Siaga Bencana** | Checklist 18 barang (panduan BNPB), progres, pengingat periksa ulang tiap 6 bulan. |
+| **Panduan Bencana** (`panduan.js`) | Langkah sebelum/saat/sesudah untuk gempa, tsunami, banjir, longsor, gunung api, kebakaran & asap, cuaca ekstrem. Tersimpan di aplikasi, bisa dibacakan. |
+| **Lokasi Tersimpan** (`lokasi.js`) | Hingga 8 tempat (rumah, kantor, sekolah anak, rumah orang tua). Muncul saat kolom pencarian kosong diketuk, ditandai di peta, dan **ikut dipantau**: peringatan berbunyi bila gempa terasa di salah satunya ("terasa kuat di Rumah Ibu"). |
+| **Peta & Data Offline** (`offline.js`) | Simpan peta ±5 km di sekitar lokasi (±300 tile) dan lihat pemakaian penyimpanan. |
+| **Pengaturan & Tentang** (`pengaturan.js`) | Bahasa, tema, notifikasi, pemantauan latar, mode siaga tinggi, bacakan peringatan, versi & pembaruan, ringkasan privasi. |
+
+## Tanpa sinyal 📴
+
+- Setiap respons data yang berhasil dimuat disimpan di Cache Storage (`platform.js`). Saat sinyal hilang atau server gagal, data tersimpan dipakai dan beranda menulis "Menampilkan data tersimpan dari …".
+- Tile peta yang pernah dilihat disimpan (maks. 6000 tile, 30 hari), dan peta sekitar bisa diunduh lebih dulu dari halaman Peta & Data Offline.
+- Bila GPS gagal, atau saat offline dan masih di dekat lokasi terakhir, aplikasi memakai lokasi terakhir agar data tersimpan cocok.
+- Pemantauan live BMKG tidak pernah memakai data lama.
+
+## Peringatan dini cuaca BMKG ⛈️
+
+`/api/cuaca-ekstrem` membaca RSS nowcast BMKG beserta berkas CAP 1.2 tiap peringatan, lalu memeriksa apakah lokasi berada di dalam poligon area peringatan. Bila ada, beranda menampilkan peringatan beserta masa berlakunya, dan notifikasi dikirim sekali per peringatan. *Catatan: format feed BMKG belum diuji dengan data asli dari lingkungan pengembangan; parser mengikuti standar CAP.*
+
+## Bahasa & suara
+
+- **English** (Pengaturan, atau tombol di layar sambutan) menerjemahkan layar yang paling penting saat darurat: peringatan gempa/tsunami, SOS, panduan, dan nomor darurat. Bagian lain tetap berbahasa Indonesia. Bawaan selalu Bahasa Indonesia.
+- **Bacakan**: peringatan dan panduan bisa dibacakan (tombol 🔊). Pembacaan otomatis setelah sirene bisa diaktifkan di Pengaturan. Aplikasi Android memakai TextToSpeech bawaan HP.
 
 ## Status koneksi & pemakaian pertama
 
@@ -190,7 +214,11 @@ Folder `android/` berisi aplikasi Android native kecil (±400 KB, tanpa library 
 - Halaman (`public/`) disalin ke aset APK dan disajikan dari `https://appassets.androidplatform.net`, jadi aplikasi terbuka tanpa internet.
 - Tidak ada server Node di HP. Endpoint `/api/*` dijalankan di halaman memakai logika yang sama dengan server (`public/js/api-inti.mjs`), dan sumber yang memblokir CORS diambil lewat proxy native (`/__proxy`, hanya untuk host sumber data yang terdaftar). Hasil Overpass di-cache 7 hari di Cache Storage.
 - Fitur native lewat `window.WoiAndroid` (`public/js/platform.js` ↔ `Jembatan.java`): izin lokasi, notifikasi sistem (Android 13+ meminta izin), lembar berbagi, layar tetap menyala selama mode darurat dan peringatan, warna bilah sistem mengikuti tema, dan tombol kembali (menutup panel/halaman dulu, lalu meminimalkan aplikasi).
-- **Pantau saat aplikasi ditutup** (`PantauGempa.java`): tiap ±15 menit memeriksa BMKG dan memberi notifikasi alarm bila gempa baru diperkirakan terasa di lokasi terakhir (MMI ≥ 4) atau berpotensi tsunami saat lokasi di pesisir. Bisa dimatikan di menu LIVE. Android bisa menunda jadwal saat mode hemat daya.
+- **Pantau saat aplikasi ditutup** (`PantauGempa.java`): tiap ±15 menit memeriksa BMKG dan memberi notifikasi alarm bila gempa baru diperkirakan terasa (MMI ≥ 4) di lokasi terakhir **atau lokasi tersimpan**, atau berpotensi tsunami di lokasi pesisir. Android bisa menunda jadwal saat mode hemat daya; Pengaturan menyediakan tombol untuk mengecualikan aplikasi dari optimasi baterai.
+- **Mode siaga tinggi** (`SiagaTinggi.java`, opsional): layanan latar depan yang memeriksa BMKG **tiap menit** dengan notifikasi tetap, dipulihkan setelah HP dinyalakan ulang (`BootReceiver.java`).
+- **Pintasan layar utama**: tekan lama ikon aplikasi untuk SOS, Darurat, Saya aman, atau Telepon 112 (`res/xml/pintasan.xml`, `terrawoi://…`).
+- Senter SOS, SMS ke banyak penerima sekaligus, dan TextToSpeech lewat `Jembatan.java`.
+- **Pemberitahuan versi baru**: sekali sehari memeriksa GitHub Release terbaru (hanya bila rilis bisa dibaca publik).
 - Tautan telepon, SMS, Google Maps, dan situs luar dibuka di aplikasi yang sesuai.
 - minSdk 24 (Android 7.0), targetSdk 35, tata letak tepi-ke-tepi, ikon adaptif (termasuk ikon bertema Android 13).
 
@@ -208,6 +236,10 @@ Build pertama membuat **keystore rilis** di `android/keystore/` (diabaikan git).
 
 Versi aplikasi diatur di `android/AndroidManifest.xml` (`versionCode` dinaikkan setiap rilis, `versionName` untuk ditampilkan).
 
+- `bash android/build.sh aab` juga membuat **AAB** untuk Google Play (bundletool diunduh otomatis).
+- **GitHub Actions** (`.github/workflows/android.yml`) membangun APK & AAB saat tag `v*` didorong atau dijalankan manual, lalu membuat GitHub Release. Isi secrets `KEYSTORE_B64` dan `KS_PASS` lebih dulu.
+- Langkah rilis & isian Play Console: [`docs/RILIS.md`](docs/RILIS.md). Kebijakan privasi: [`docs/KEBIJAKAN-PRIVASI.md`](docs/KEBIJAKAN-PRIVASI.md).
+
 ## Struktur
 
 ```
@@ -219,6 +251,13 @@ public/js/
   api-inti.mjs         Logika endpoint /api/* (MAGMA, ESDM, FIRMS, Overpass, PetaBencana, BNPB), dipakai server & Android
   platform.js          Penghubung browser/Android: /api/* di aplikasi, notifikasi, berbagi, tombol kembali
   siaga.js             Kontak darurat, kabari keluarga, Tas Siaga
+  sos.js               Layar SOS: peluit, senter, layar berkedip, SMS massal
+  panduan.js           Panduan bencana offline (dua bahasa)
+  rencana.js           Rencana darurat keluarga
+  lokasi.js            Lokasi tersimpan (ikut dipantau)
+  offline.js           Simpan peta sekitar & status data offline
+  pengaturan.js        Pengaturan, privasi, pemeriksaan versi baru
+  bahasa.js            Bahasa Indonesia / English (tr())
   konteks.js           Data bersama per lokasi (cuaca, geologi, OSM, grid elevasi)
   peta.js              Leaflet, lapisan ESDM, radius per bahaya
   config.js            Radius & ambang tiap bahaya
@@ -247,6 +286,8 @@ android/
     Jembatan.java           window.WoiAndroid untuk halaman web
     PantauGempa.java        Pemantauan gempa BMKG di latar (JobScheduler)
     Notif.java              Kanal & pengiriman notifikasi
+    SiagaTinggi.java        Mode siaga tinggi (layanan latar depan, cek BMKG tiap menit)
+    BootReceiver.java       Pulihkan pemantauan setelah HP dinyalakan ulang
   res/                      Ikon, tema terang/gelap, layar pembuka
 ```
 
@@ -261,6 +302,7 @@ android/
 | `/api/osm?lat&lon` | OpenStreetMap Overpass: bangunan, titik kumpul, fasilitas, sungai, pantai | 7 hari di disk (`.cache/osm/`), dicoba ulang bila server sibuk |
 | `/api/gedung?lat&lon` | OpenStreetMap Overpass: bentuk & tinggi gedung radius 800 m | 7 hari di disk |
 | `/api/evakuasi-resmi?lat&lon` | BNPB InaRISK: titik kumpul, TES, TEA, evakuasi vertikal/horizontal (radius 15 km) | 24 jam |
+| `/api/cuaca-ekstrem?lat&lon` | BMKG: peringatan dini cuaca (nowcast RSS + CAP) yang areanya mencakup titik | 10 menit |
 
 Sumber lain diakses langsung dari browser: BMKG, USGS, Open-Meteo (cuaca, elevasi, kualitas udara, geocoding), Macrostrat (cadangan data geologi), dan Nominatim.
 

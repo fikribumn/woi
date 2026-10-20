@@ -44,8 +44,9 @@
     <div class="map-buttons glass" role="toolbar" aria-label="Kontrol peta">
       <button id="btn-gps" type="button" aria-label="Lokasi saya" title="Lokasi saya"><i data-lucide="locate-fixed"></i></button>
       <button id="btn-lapisan" type="button" aria-label="Lapisan peta" title="Lapisan peta"><i data-lucide="layers"></i></button>
-      <button id="btn-refresh" type="button" aria-label="Muat ulang data" title="Muat ulang data"><i data-lucide="rotate-cw"></i></button>
-      <button id="btn-tema" type="button" aria-label="Tema tampilan" title="Tema tampilan" aria-expanded="false" aria-controls="panel-tema"><i data-lucide="palette"></i></button>
+      <button id="btn-refresh" class="tbl-ekstra" type="button" aria-label="Muat ulang data" title="Muat ulang data"><i data-lucide="rotate-cw"></i></button>
+      <button id="btn-tema" class="tbl-ekstra" type="button" aria-label="Tema tampilan" title="Tema tampilan" aria-expanded="false" aria-controls="panel-tema"><i data-lucide="palette"></i></button>
+      <button id="btn-lainnya" type="button" aria-label="Tombol lainnya" title="Lainnya" aria-expanded="false"><i data-lucide="ellipsis" class="ik-buka"></i><i data-lucide="x" class="ik-tutup"></i></button>
     </div>
 
     <div id="panel-tema" class="panel-tema glass" role="dialog" aria-label="Tema tampilan" hidden>
@@ -69,40 +70,49 @@
       </button>
 
       <div class="sheet-scroll" id="sheet-scroll">
-        <!-- Beranda -->
+        <!-- Beranda: dibuat seringkas mungkin. Satu status utama, tiga aksi, lalu hanya bahaya yang perlu perhatian. -->
         <div class="page page-home" id="page-home">
           <header class="home-head">
             <p class="merek" aria-label="TERRA WOI"><span>TERRA</span> WOI</p>
-            <p class="eyebrow">Lokasi diperiksa</p>
             <h1 id="lokasi-label">Menentukan lokasi…</h1>
-            <div class="ringkas" id="ringkas-risiko"><span class="muted">Menganalisis bahaya di sekitar…</span></div>
             <p class="diperbarui" id="diperbarui" aria-live="polite"></p>
           </header>
 
+          <button type="button" class="status-utama" id="status-utama" data-level="memuat" aria-live="polite">
+            <span class="su-ikon"><i data-lucide="loader"></i></span>
+            <span class="su-teks"><b data-su-judul>Menganalisis…</b><span data-su-isi>Memeriksa bahaya di sekitar Anda</span></span>
+          </button>
+
           <div id="banner-offline" class="banner-offline" role="status" hidden>
             <i data-lucide="wifi-off" aria-hidden="true"></i>
-            <span><b>Tidak ada koneksi internet.</b> Data yang tampil mungkin sudah usang. Nomor darurat dan Tas Siaga tetap bisa dipakai.</span>
+            <span><b>Tidak ada koneksi internet.</b> Yang tampil adalah data tersimpan terakhir.</span>
           </div>
-
           <div id="alert-tsunami" class="alert" hidden></div>
+          <div id="alert-cuaca" class="alert-cuaca" role="alert" hidden></div>
 
-          <!-- Tindakan (tempat aman, titik kumpul) didahulukan sebelum ubin informasi -->
-          <div class="group" id="group-baris"></div>
+          <div class="aksi-cepat" id="aksi-cepat"></div>
 
-          <div class="tiles" id="tiles"></div>
+          <div class="tiles" id="tiles-penting"></div>
+          <p class="meta penting-kosong" id="penting-kosong" hidden>Tidak ada bahaya menonjol di sekitar Anda saat ini.</p>
 
-          <h2 class="judul-grup">Siaga</h2>
-          <div class="group" id="group-siaga"></div>
+          <details class="semua-bahaya" id="semua-bahaya">
+            <summary><span>Lihat semua bahaya</span><i data-lucide="chevron-down"></i></summary>
+            <div class="tiles" id="tiles"></div>
+            <div class="group" id="group-baris"></div>
+          </details>
 
           <p class="disclaimer">
-            Alat bantu informasi, <strong>bukan peringatan dini resmi</strong>. Gempa tidak dapat diprediksi; penilaian lain adalah perkiraan dari data terbuka.
-            Ikuti arahan <a href="https://www.bmkg.go.id" target="_blank" rel="noopener">BMKG</a>,
-            <a href="https://magma.esdm.go.id" target="_blank" rel="noopener">PVMBG</a>,
-            <a href="https://inarisk.bnpb.go.id" target="_blank" rel="noopener">BNPB</a>, dan BPBD. Darurat: <strong>112</strong>.
+            Alat bantu informasi, <strong>bukan peringatan dini resmi</strong>. Ikuti arahan BMKG, PVMBG, dan BPBD. Darurat: <strong>112</strong>.
           </p>
         </div>
 
         <!-- Halaman detail (diisi modul) -->
+        <article class="page card" id="card-siaga" data-statis hidden>
+          <header><h2>Siaga</h2><span class="badge" data-badge></span></header>
+          <p class="summary" data-summary>Bersiap sebelum bencana, dan bertindak cepat saat terjadi.</p>
+          <div data-detail><div class="group" id="group-siaga"></div><div class="group" id="group-siaga-2"></div></div>
+        </article>
+
         <article class="page card" id="card-kontak" data-statis hidden>
           <header><h2>Kontak Darurat</h2><span class="badge" data-badge>112</span></header>
           <p class="summary" data-summary></p>
@@ -114,6 +124,37 @@
           <p class="summary" data-summary></p>
           <div data-detail></div>
           <footer class="src">Mengacu panduan Tas Siaga Bencana BNPB</footer>
+        </article>
+
+        <article class="page card" id="card-rencana" data-statis hidden>
+          <header><h2>Rencana Keluarga</h2><span class="badge" data-badge>…</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+        </article>
+
+        <article class="page card" id="card-panduan" data-statis hidden>
+          <header><h2>Panduan Bencana</h2><span class="badge" data-badge>Offline</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+          <footer class="src">Mengacu panduan umum BNPB dan BMKG</footer>
+        </article>
+
+        <article class="page card" id="card-lokasi" data-statis hidden>
+          <header><h2>Lokasi Tersimpan</h2><span class="badge" data-badge>…</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+        </article>
+
+        <article class="page card" id="card-offline" data-statis hidden>
+          <header><h2>Peta &amp; Data Offline</h2><span class="badge" data-badge>…</span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
+        </article>
+
+        <article class="page card" id="card-pengaturan" data-statis hidden>
+          <header><h2>Pengaturan &amp; Tentang</h2><span class="badge" data-badge></span></header>
+          <p class="summary" data-summary></p>
+          <div data-detail></div>
         </article>
 
         <article class="page card" id="card-aman" hidden>
@@ -216,6 +257,7 @@
       <p class="meta">Alat bantu informasi, bukan peringatan dini resmi. Ikuti arahan BMKG dan BPBD.</p>
       <button type="button" class="sb-mulai" data-sambut="izinkan">Izinkan lokasi &amp; mulai</button>
       <button type="button" class="sb-lewat" data-sambut="lewati">Nanti saja, pilih lokasi manual</button>
+      <button type="button" class="sb-bahasa" data-sambut-bahasa>English for emergency screens</button>
     </div>
   </dialog>
 
@@ -226,6 +268,7 @@
         <span>Kami akan mencari area aman terdekat berdasarkan elevasi dan lereng, lengkap dengan rutenya.</span>
       </div>
       <div id="pilih-darurat" class="pilih-darurat"></div>
+      <button type="button" class="as-sos" data-buka-sos><i data-lucide="siren"></i>Saya terjebak / butuh pertolongan (SOS)</button>
     </div>
     <button type="button" data-batal class="as-batal">Batal</button>
   </dialog>

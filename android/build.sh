@@ -3,6 +3,8 @@
 # Halaman web (public/) disalin apa adanya ke assets/www.
 #
 # Pemakaian:   android/build.sh            → android/build/terra-woi-<versi>.apk (ditandatangani kunci rilis)
+#              android/build.sh aab        → juga android/build/terra-woi-<versi>.aab untuk Google Play
+#                                            (bundletool diunduh otomatis dari GitHub)
 # Kebutuhan:   JDK 17+, dan salah satu:
 #   - Android SDK (ANDROID_HOME) dengan build-tools & platforms/android-35, atau
 #   - paket Ubuntu/Debian: apt install android-sdk-build-tools apksigner zipalign
@@ -108,3 +110,33 @@ APK="$OUT/terra-woi-$VERSI.apk"
 "$APKSIGNER" verify --min-sdk-version "$MIN_SDK" "$APK"
 rm -f "$OUT/belum-tertanda.apk" "$OUT/rata.apk" "$OUT/dasar.apk" "$APK.idsig"
 echo "✓ $APK ($(du -h "$APK" | cut -f1))"
+
+# ---------- Android App Bundle (Google Play) ----------
+if [[ "${1:-}" == "aab" ]]; then
+  echo "• App Bundle"
+  BUNDLETOOL="${BUNDLETOOL:-$DIR/.sdk/bundletool-1.17.2.jar}"
+  if [[ ! -f "$BUNDLETOOL" ]]; then
+    echo "• Mengunduh bundletool…"
+    mkdir -p "$DIR/.sdk"
+    curl -fsSL -o "$BUNDLETOOL.tmp" https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar
+    mv "$BUNDLETOOL.tmp" "$BUNDLETOOL"
+  fi
+  # Resource dalam format protobuf, lalu disusun menjadi modul "base"
+  "$AAPT2" link --proto-format -I "$RES_JAR" \
+    --manifest "$DIR/AndroidManifest.xml" \
+    --min-sdk-version "$MIN_SDK" --target-sdk-version "$TARGET_SDK" \
+    -A "$OUT/assets" -o "$OUT/proto.apk" "$OUT/res.zip"
+  MODUL="$OUT/modul"
+  rm -rf "$MODUL" && mkdir -p "$MODUL/manifest" "$MODUL/dex"
+  (cd "$MODUL" && unzip -q "$OUT/proto.apk")
+  mv "$MODUL/AndroidManifest.xml" "$MODUL/manifest/"
+  cp "$OUT/dex/classes.dex" "$MODUL/dex/"
+  (cd "$MODUL" && zip -q -r -X "$OUT/base.zip" .)
+  AAB="$OUT/terra-woi-$VERSI.aab"
+  rm -f "$AAB"
+  java -jar "$BUNDLETOOL" build-bundle --modules="$OUT/base.zip" --output="$AAB"
+  jarsigner -keystore "$KEYSTORE" -storepass:env KS_PASS -keypass:env KS_PASS -sigalg SHA256withRSA -digestalg SHA-256 "$AAB" terra-woi >/dev/null
+  java -jar "$BUNDLETOOL" validate --bundle="$AAB" >/dev/null
+  rm -rf "$MODUL" "$OUT/proto.apk" "$OUT/base.zip"
+  echo "✓ $AAB ($(du -h "$AAB" | cut -f1))"
+fi

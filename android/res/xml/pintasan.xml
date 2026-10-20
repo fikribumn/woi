@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tekan lama ikon aplikasi di layar utama untuk aksi cepat -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="sos"
+        android:enabled="true"
+        android:icon="@drawable/ic_pintas_sos"
+        android:shortcutShortLabel="@string/pintas_sos"
+        android:shortcutLongLabel="@string/pintas_sos_panjang">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="id.terrawoi.app" android:targetClass="id.terrawoi.app.MainActivity"
+            android:data="terrawoi://sos" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="darurat"
+        android:enabled="true"
+        android:icon="@drawable/ic_pintas_darurat"
+        android:shortcutShortLabel="@string/pintas_darurat"
+        android:shortcutLongLabel="@string/pintas_darurat_panjang">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="id.terrawoi.app" android:targetClass="id.terrawoi.app.MainActivity"
+            android:data="terrawoi://darurat" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="aman"
+        android:enabled="true"
+        android:icon="@drawable/ic_pintas_aman"
+        android:shortcutShortLabel="@string/pintas_aman"
+        android:shortcutLongLabel="@string/pintas_aman_panjang">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="id.terrawoi.app" android:targetClass="id.terrawoi.app.MainActivity"
+            android:data="terrawoi://aman" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="telepon112"
+        android:enabled="true"
+        android:icon="@drawable/ic_pintas_112"
+        android:shortcutShortLabel="@string/pintas_112"
+        android:shortcutLongLabel="@string/pintas_112">
+        <intent
+            android:action="android.intent.action.DIAL"
+            
+            android:data="tel:112" />
+    </shortcut>
+</shortcuts>

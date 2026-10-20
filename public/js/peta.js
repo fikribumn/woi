@@ -4,6 +4,67 @@ import { temaAktif, gelapAktif } from './tema.js';
 
 const L = window.L;
 
+// ---------- Tile yang tersimpan untuk offline ----------
+// Tile peta dasar yang pernah dilihat (atau diunduh lewat simpanPetaSekitar) disimpan di Cache Storage
+// sehingga peta tetap tampil saat sinyal hilang. Tile yang tersimpan dipakai dulu (maks. 30 hari).
+const KACHE_PETA = 'woi-peta';
+const UMUR_TILE = 30 * 24 * 3600e3;
+const TILE_MAKS = 6000;
+let tambahanSejakRapikan = 0;
+
+async function rapikanTile(c) {
+  const kunci = await c.keys();
+  for (const k of kunci.slice(0, Math.max(0, kunci.length - TILE_MAKS))) await c.delete(k); // urutan = urutan simpan
+}
+
+async function ambilTile(url, { paksaJaringan = false } = {}) {
+  const c = await caches.open(KACHE_PETA);
+  const ada = await c.match(url);
+  if (ada && !paksaJaringan && Date.now() - Number(ada.headers.get('x-waktu')) < UMUR_TILE) return ada.blob();
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    await c.put(url, new Response(blob, { headers: { 'content-type': blob.type, 'x-waktu': String(Date.now()) } }));
+    if (++tambahanSejakRapikan > 300) {
+      tambahanSejakRapikan = 0;
+      rapikanTile(c);
+    }
+    return blob;
+  } catch (e) {
+    if (ada) return ada.blob();
+    throw e;
+  }
+}
+
+const TileTersimpan = L.TileLayer.extend({
+  createTile(coords, done) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.setAttribute('role', 'presentation');
+    const url = this.getTileUrl(coords);
+    const biasa = () => {
+      img.onload = () => done(null, img);
+      img.onerror = (e) => done(e, img);
+      img.src = url;
+    };
+    if (!('caches' in window)) {
+      biasa();
+      return img;
+    }
+    ambilTile(url).then((blob) => {
+      const objek = URL.createObjectURL(blob);
+      img.onload = () => {
+        URL.revokeObjectURL(objek);
+        done(null, img);
+      };
+      img.onerror = (e) => done(e, img);
+      img.src = objek;
+    }).catch(biasa); // CORS ditolak / gagal: muat langsung tanpa disimpan
+    return img;
+  },
+});
+
 export const map = L.map('map', { zoomControl: false }).setView([DEFAULT_LOC.lat, DEFAULT_LOC.lon], 12);
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
@@ -18,15 +79,15 @@ function urlDasar() {
 }
 const opsiEsri = { maxZoom: 19, maxNativeZoom: 16 };
 const url0 = urlDasar();
-const dasar = L.tileLayer(url0.dasar, { ...opsiEsri, className: 'peta-dasar', attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap' });
-const label = L.tileLayer(url0.label, { ...opsiEsri, className: 'peta-label', zIndex: 260 });
+const dasar = new TileTersimpan(url0.dasar, { ...opsiEsri, className: 'peta-dasar', attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap' });
+const label = new TileTersimpan(url0.label, { ...opsiEsri, className: 'peta-label', zIndex: 260 });
 const kanvas = L.layerGroup([dasar, label]).addTo(map);
 document.addEventListener('tema:ganti', () => {
   const u = urlDasar();
   if (dasar._url !== u.dasar) dasar.setUrl(u.dasar);
   if (label._url !== u.label) label.setUrl(u.label);
 });
-const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+const osm = new TileTersimpan('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap',
 });
@@ -174,4 +235,53 @@ export function ikonSegitiga(warna) {
 
 export function ikonTitik(kelas, isi = '') {
   return L.divIcon({ className: '', html: `<div class="pin ${kelas}">${isi}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+}
+
+// ---------- Simpan peta sekitar untuk offline ----------
+function rentangTile(lat, lon, km, z) {
+  const n = 2 ** z;
+  const x = (lo) => Math.floor(((lo + 180) / 360) * n);
+  const y = (la) => {
+    const r = (la * Math.PI) / 180;
+    return Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  };
+  const dLat = km / 110.57;
+  const dLon = km / (111.32 * Math.cos((lat * Math.PI) / 180));
+  return { x0: x(lon - dLon), x1: x(lon + dLon), y0: y(lat + dLat), y1: y(lat - dLat) };
+}
+
+/**
+ * Unduh tile peta dasar & label (tema aktif) di sekitar titik: zoom 12–15 dalam radius km, zoom 16 dalam 1,5 km.
+ * kemajuan(selesai, total). Mengembalikan { berhasil, gagal }.
+ */
+export async function simpanPetaSekitar(lat, lon, km = 5, kemajuan = () => {}) {
+  const url = [];
+  for (const layer of [dasar, label]) {
+    for (const [z, r] of [[12, km], [13, km], [14, km], [15, km], [16, Math.min(km, 1.5)]]) {
+      const t = rentangTile(lat, lon, r, z);
+      for (let x = t.x0; x <= t.x1; x++) {
+        for (let y = t.y0; y <= t.y1; y++) url.push(L.Util.template(layer._url, { x, y, z, s: 'a', r: '' }));
+      }
+    }
+  }
+  let selesai = 0;
+  let gagal = 0;
+  const antrean = [...url];
+  const pekerja = async () => {
+    while (antrean.length) {
+      const u = antrean.shift();
+      try { await ambilTile(u, { paksaJaringan: true }); } catch { gagal++; }
+      kemajuan(++selesai, url.length);
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, pekerja));
+  return { berhasil: selesai - gagal, gagal };
+}
+
+export async function jumlahTileTersimpan() {
+  try { return (await (await caches.open(KACHE_PETA)).keys()).length; } catch { return 0; }
+}
+
+export async function hapusPetaOffline() {
+  try { await caches.delete(KACHE_PETA); } catch { /* abaikan */ }
 }

@@ -15,16 +15,33 @@ export const KARTU = [
   { id: 'card-geologi', judul: 'Geologi', ikon: 'layers-3', warna: 'var(--brown)' },
   { id: 'card-bangunan', judul: 'Bangunan', ikon: 'building-2', warna: 'var(--gray)' },
 ];
+// Tiga aksi utama di beranda
+const AKSI = [
+  { id: 'card-aman', judul: 'Tempat aman', ikon: 'shield-check', warna: 'var(--green)' },
+  { id: 'card-titik', judul: 'Titik kumpul', ikon: 'flag', warna: 'var(--teal)' },
+  { id: 'card-siaga', judul: 'Siaga', ikon: 'life-buoy', warna: 'var(--orange)' },
+];
+// Detail tambahan, di dalam "Lihat semua bahaya"
 const BARIS = [
-  { id: 'card-titik', judul: 'Titik Kumpul & Evakuasi', ikon: 'flag', warna: 'var(--teal)' },
-  { id: 'card-aman', judul: 'Tempat Paling Aman', ikon: 'shield-check', warna: 'var(--green)' },
   { id: 'card-jarak', judul: 'Jarak ke Sumber Bahaya', ikon: 'ruler', warna: 'var(--purple)' },
 ];
+// Isi halaman Siaga (sos = aksi, bukan halaman)
 const SIAGA = [
   { id: 'card-kontak', judul: 'Kontak Darurat & Kabari Keluarga', ikon: 'phone-call', warna: 'var(--red)' },
+  { id: 'sos', judul: 'SOS: saya terjebak', ikon: 'siren', warna: 'var(--red)', aksi: true },
+  { id: 'card-rencana', judul: 'Rencana Keluarga', ikon: 'users', warna: 'var(--blue)' },
   { id: 'card-tas', judul: 'Tas Siaga Bencana', ikon: 'backpack', warna: 'var(--orange)' },
+  { id: 'card-panduan', judul: 'Panduan Bencana', ikon: 'book-open', warna: 'var(--teal)' },
 ];
-const SEMUA = [...KARTU, ...BARIS, ...SIAGA];
+const SIAGA_2 = [
+  { id: 'card-lokasi', judul: 'Lokasi Tersimpan', ikon: 'map-pinned', warna: 'var(--indigo)' },
+  { id: 'card-offline', judul: 'Peta & Data Offline', ikon: 'hard-drive-download', warna: 'var(--gray)' },
+  { id: 'card-pengaturan', judul: 'Pengaturan & Tentang', ikon: 'settings', warna: 'var(--gray)' },
+];
+const HALAMAN_SIAGA = [...SIAGA, ...SIAGA_2].filter((k) => !k.aksi);
+const SEMUA = [...KARTU, ...AKSI, ...BARIS, ...HALAMAN_SIAGA];
+// Halaman induk untuk tombol kembali
+const INDUK = Object.fromEntries(HALAMAN_SIAGA.map((k) => [k.id, 'card-siaga']));
 
 export const ikon = (nama, kelas = '') => `<i data-lucide="${nama}" class="${kelas}"></i>`;
 export function renderIkon(root = document) {
@@ -41,61 +58,126 @@ const kalimatPertama = (t) => {
   return m ? m[1] : t.slice(0, 140);
 };
 
-// ---------- Ubin & baris beranda ----------
+// ---------- Beranda ----------
+const baris = (daftar) => daftar.map((k) => `
+  <button type="button" class="row" ${k.aksi ? `data-aksi-baris="${k.id}"` : `data-tile="${k.id}"`} style="--c:${k.warna}">
+    <span class="row-ikon">${ikon(k.ikon)}</span>
+    <span class="row-body"><span class="row-title">${esc(k.judul)}</span>${k.aksi ? '' : '<span class="row-val" data-tv></span>'}${ikon('chevron-right', 'row-chev')}</span>
+  </button>`).join('');
+
+let bukaSosFn = () => {};
+/** main.js memberi fungsi pembuka layar SOS (menghindari impor melingkar). */
+export const aturPembukaSos = (fn) => { bukaSosFn = fn; };
+
 function bangunBeranda() {
   $('#tiles').innerHTML = KARTU.map((k) => `
-    <button type="button" class="tile" data-tile="${k.id}" style="--c:${k.warna}">
+    <button type="button" class="tile memuat" data-tile="${k.id}" style="--c:${k.warna}">
       <span class="tile-head">${ikon(k.ikon)}${esc(k.judul)}</span>
       <span class="tile-val" data-tv>…</span>
       <span class="tile-sub" data-ts>Memuat</span>
     </button>`).join('');
-  const baris = (daftar) => daftar.map((k) => `
-    <button type="button" class="row" data-tile="${k.id}" style="--c:${k.warna}">
-      <span class="row-ikon">${ikon(k.ikon)}</span>
-      <span class="row-body"><span class="row-title">${esc(k.judul)}</span><span class="row-val" data-tv>…</span>${ikon('chevron-right', 'row-chev')}</span>
+  $('#aksi-cepat').innerHTML = AKSI.map((k) => `
+    <button type="button" class="aksi" data-tile="${k.id}" style="--c:${k.warna}">
+      <span class="row-ikon">${ikon(k.ikon)}</span><span class="aksi-judul">${esc(k.judul)}</span>
     </button>`).join('');
   $('#group-baris').innerHTML = baris(BARIS);
   $('#group-siaga').innerHTML = baris(SIAGA);
+  $('#group-siaga-2').innerHTML = baris(SIAGA_2);
 
-  // Judul tiap halaman detail: ikon + tombol kembali
+  // Judul tiap halaman detail: ikon + tombol kembali (ke Siaga untuk halaman persiapan, selain itu ke ringkasan)
   for (const k of SEMUA) {
     const card = document.getElementById(k.id);
     const h2 = $('h2', card);
     h2.insertAdjacentHTML('afterbegin', `<span class="row-ikon" style="--c:${k.warna}">${ikon(k.ikon)}</span>`);
-    card.insertAdjacentHTML('afterbegin', `<button type="button" class="back" data-back>${ikon('chevron-left')}Ringkasan</button>`);
+    card.insertAdjacentHTML('afterbegin', `<button type="button" class="back" data-back="${INDUK[k.id] || ''}">${ikon('chevron-left')}${INDUK[k.id] ? 'Siaga' : 'Ringkasan'}</button>`);
   }
 
-  document.querySelectorAll('[data-tile]').forEach((b) => b.addEventListener('click', () => bukaHalaman(b.dataset.tile)));
-  document.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', () => bukaHalaman(null)));
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tile]');
+    if (t) return bukaHalaman(t.dataset.tile);
+    const b = e.target.closest('[data-back]');
+    if (b) return bukaHalaman(b.dataset.back || null);
+    const a = e.target.closest('[data-aksi-baris]');
+    if (a && a.dataset.aksiBaris === 'sos') bukaSosFn();
+  });
+  $('#status-utama').addEventListener('click', () => {
+    const id = $('#status-utama').dataset.buka;
+    if (id) bukaHalaman(id);
+  });
 }
 
+const PENTING = new Set(['sedang', 'tinggi', 'bahaya']);
 function sinkronUbin(id) {
   const card = document.getElementById(id);
-  const tile = document.querySelector(`[data-tile="${id}"]`);
-  if (!card || !tile) return;
+  const tile = document.querySelector(`#tiles [data-tile="${id}"], #tiles-penting [data-tile="${id}"]`);
   const badge = $('[data-badge]', card);
+  const row = document.querySelector(`.row[data-tile="${id}"] [data-tv]`);
+  if (row) row.textContent = badge.textContent === '…' ? '' : badge.textContent;
+  if (!tile) return;
   tile.dataset.level = badge.dataset.level || '';
   if (!badge.dataset.level) tile.removeAttribute('data-level');
   $('[data-tv]', tile).textContent = badge.textContent;
   tile.classList.toggle('memuat', badge.textContent === '…');
   const sub = $('[data-ts]', tile);
   if (sub) sub.textContent = kalimatPertama(teksPolos($('[data-summary]', card).innerHTML));
-  ringkasRisiko();
+  tataUbin();
+  renderStatus();
 }
 
-const NAMA_LV = { rendah: 'Rendah', sedang: 'Sedang', tinggi: 'Tinggi', bahaya: 'Sangat tinggi' };
-function ringkasRisiko() {
+/** Bahaya sedang ke atas tampil langsung di beranda; sisanya di "Lihat semua bahaya". Urutan tetap seperti KARTU. */
+function tataUbin() {
+  const penting = $('#tiles-penting');
+  const lain = $('#tiles');
+  let memuat = 0;
+  for (const k of KARTU) {
+    const t = document.querySelector(`[data-tile="${k.id}"].tile`);
+    if (t.classList.contains('memuat')) memuat++;
+    const tujuan = PENTING.has(t.dataset.level) && k.id !== 'card-bangunan' ? penting : lain;
+    tujuan.append(t); // append memindahkan elemen; urutan mengikuti KARTU
+  }
+  $('#penting-kosong').hidden = memuat > 0 || penting.children.length > 0;
+  const n = lain.children.length;
+  $('#semua-bahaya summary span').textContent = penting.children.length ? `Lihat bahaya lainnya (${n})` : `Lihat semua bahaya (${n})`;
+}
+
+const STATUS = {
+  aman: { judul: 'Aman', ikon: 'shield-check' },
+  sedang: { judul: 'Waspada', ikon: 'alert-triangle' },
+  tinggi: { judul: 'Rawan', ikon: 'alert-triangle' },
+  bahaya: { judul: 'Bahaya', ikon: 'siren' },
+};
+let statusTerakhir = '';
+function renderStatus() {
+  const el = $('#status-utama');
   const daftar = KARTU
     .map((k) => ({ ...k, level: document.getElementById(k.id).querySelector('[data-badge]').dataset.level || '' }))
     .filter((k) => k.level && k.id !== 'card-bangunan');
-  const el = $('#ringkas-risiko');
-  if (!daftar.length) return;
-  const maks = Math.max(...daftar.map((k) => URUTAN_LEVEL[k.level]));
-  const teratas = daftar.filter((k) => URUTAN_LEVEL[k.level] === maks);
-  const lv = teratas[0].level;
-  el.innerHTML = maks <= 1
-    ? '<b>Kondisi umumnya aman.</b> <span class="muted">Tidak ada bahaya menonjol saat ini.</span>'
-    : `<span class="muted">Perhatian utama:</span> <b style="color:var(--${{ sedang: 't-yellow', tinggi: 't-orange', bahaya: 't-red' }[lv]})">${teratas.map((k) => esc(k.judul)).join(', ')}</b> <span class="muted">· ${NAMA_LV[lv]}</span>`;
+  const memuat = KARTU.some((k) => document.getElementById(k.id).querySelector('[data-badge]').textContent === '…');
+  let kunci;
+  let judul;
+  let isi;
+  let lv;
+  if (!daftar.length) {
+    lv = 'memuat';
+    judul = memuat ? 'Menganalisis…' : 'Belum ada data';
+    isi = memuat ? 'Memeriksa bahaya di sekitar Anda' : 'Periksa koneksi lalu muat ulang';
+    el.dataset.buka = '';
+  } else {
+    const maks = Math.max(...daftar.map((k) => URUTAN_LEVEL[k.level]));
+    const teratas = daftar.filter((k) => URUTAN_LEVEL[k.level] === maks);
+    lv = maks <= 1 ? 'aman' : teratas[0].level;
+    judul = STATUS[lv].judul;
+    isi = maks <= 1 ? 'Tidak ada bahaya menonjol di sekitar Anda.' : `Perhatian: ${teratas.map((k) => k.judul).join(', ')}`;
+    el.dataset.buka = maks <= 1 ? '' : teratas[0].id;
+  }
+  kunci = `${lv}|${judul}|${isi}`;
+  if (kunci === statusTerakhir) return;
+  statusTerakhir = kunci;
+  el.dataset.level = lv;
+  $('[data-su-judul]', el).textContent = judul;
+  $('[data-su-isi]', el).textContent = isi;
+  $('.su-ikon', el).innerHTML = ikon(lv === 'memuat' ? 'loader' : STATUS[lv].ikon);
+  renderIkon(el);
 }
 
 function amatiKartu() {
@@ -223,6 +305,22 @@ export function paddingPanel(panel) {
 
 // ---------- Tombol peta ----------
 function pasangTombolPeta() {
+  // Tombol yang jarang dipakai (pindah posisi, muat ulang, tema) disembunyikan di balik "Lainnya"
+  const grup = $('.map-buttons');
+  const lainnya = $('#btn-lainnya');
+  lainnya.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const buka = !grup.classList.contains('terbuka');
+    grup.classList.toggle('terbuka', buka);
+    lainnya.setAttribute('aria-expanded', String(buka));
+    lainnya.setAttribute('aria-label', buka ? 'Tutup tombol lainnya' : 'Tombol lainnya');
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.map-buttons, #panel-tema, #panel-pindah')) {
+      grup.classList.remove('terbuka');
+      lainnya.setAttribute('aria-expanded', 'false');
+    }
+  });
   const btn = $('#btn-lapisan');
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -240,6 +338,17 @@ const panelTema = () => $('#panel-tema');
 function tutupPanelTema() {
   panelTema().hidden = true;
   $('#btn-tema').setAttribute('aria-expanded', 'false');
+}
+
+/** Buka panel tema dari tempat lain (halaman Pengaturan). Di HP sheet diturunkan agar panel terlihat. */
+export function bukaPanelTema() {
+  if (kecil()) aturSheet('intip');
+  else ciutkanPanel(true, false);
+  setTimeout(() => {
+    panelTema().hidden = false;
+    $('#btn-tema').setAttribute('aria-expanded', 'true');
+    kontrolLapisan.collapse();
+  }, 0);
 }
 
 function perbaruiPanelTema() {
@@ -320,7 +429,8 @@ export function kembaliUI() {
     return true;
   }
   if ($('#page-home').hidden) {
-    bukaHalaman(null);
+    const terbuka = SEMUA.find((k) => !document.getElementById(k.id).hidden);
+    bukaHalaman(terbuka ? INDUK[terbuka.id] || null : null);
     return true;
   }
   if (kecil() && posisi !== 'intip') {

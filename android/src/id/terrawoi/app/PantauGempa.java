@@ -50,6 +50,11 @@ public class PantauGempa extends JobService {
         jadwalkan(ctx);
     }
 
+    /** Lokasi tersimpan (rumah, kantor, …) sebagai JSON [{nama, lat, lon, pesisir}] dari halaman web. */
+    static void simpanLokasiTersimpan(Context ctx, String json) {
+        pref(ctx).edit().putString("tersimpan", json).apply();
+    }
+
     static void simpanLokasi(Context ctx, double lat, double lon, String label, boolean pesisir) {
         pref(ctx).edit()
                 .putString("lat", Double.toString(lat))
@@ -63,7 +68,7 @@ public class PantauGempa extends JobService {
     /** Pasang/lepas jadwal sesuai pengaturan. Aman dipanggil berulang kali. */
     static void jadwalkan(Context ctx) {
         JobScheduler js = ctx.getSystemService(JobScheduler.class);
-        boolean adaLokasi = pref(ctx).contains("lat");
+        boolean adaLokasi = pref(ctx).contains("lat") || pref(ctx).getString("tersimpan", "[]").length() > 2;
         if (!aktif(ctx) || !adaLokasi) {
             js.cancel(ID_JOB);
             return;
@@ -100,13 +105,48 @@ public class PantauGempa extends JobService {
         return true;
     }
 
-    static void periksa(Context ctx) throws Exception {
+    /** Satu tempat yang dipantau. */
+    private static final class Tempat {
+        final String nama;
+        final double lat, lon;
+        final boolean pesisir;
+        final boolean utama;
+
+        Tempat(String nama, double lat, double lon, boolean pesisir, boolean utama) {
+            this.nama = nama;
+            this.lat = lat;
+            this.lon = lon;
+            this.pesisir = pesisir;
+            this.utama = utama;
+        }
+    }
+
+    private static List<Tempat> daftarTempat(SharedPreferences p) {
+        List<Tempat> t = new ArrayList<>();
+        if (p.contains("lat")) {
+            t.add(new Tempat(p.getString("label", "lokasi Anda"), Double.parseDouble(p.getString("lat", "0")),
+                    Double.parseDouble(p.getString("lon", "0")), p.getBoolean("pesisir", false), true));
+        }
+        try {
+            JSONArray a = new JSONArray(p.getString("tersimpan", "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.getJSONObject(i);
+                Tempat x = new Tempat(o.optString("nama", "Lokasi"), o.getDouble("lat"), o.getDouble("lon"), o.optBoolean("pesisir"), false);
+                boolean ganda = false;
+                for (Tempat y : t) ganda |= jarakKm(x.lat, x.lon, y.lat, y.lon) < 0.05;
+                if (!ganda) t.add(x);
+            }
+        } catch (Exception e) {
+            // daftar rusak: pantau lokasi utama saja
+        }
+        return t;
+    }
+
+    /** Periksa BMKG sekali dan kirim notifikasi untuk gempa baru yang terasa di salah satu tempat. */
+    static synchronized void periksa(Context ctx) throws Exception {
         SharedPreferences p = pref(ctx);
-        if (!p.contains("lat")) return;
-        double lat = Double.parseDouble(p.getString("lat", "0"));
-        double lon = Double.parseDouble(p.getString("lon", "0"));
-        String label = p.getString("label", "lokasi Anda");
-        boolean pesisir = p.getBoolean("pesisir", false);
+        List<Tempat> tempat = daftarTempat(p);
+        if (tempat.isEmpty()) return;
 
         List<JSONObject> daftar = new ArrayList<>();
         for (String url : SUMBER) {
@@ -143,20 +183,35 @@ public class PantauGempa extends JobService {
 
             double mag = Double.parseDouble(g.getString("Magnitude"));
             double dalam = angkaAwal(g.optString("Kedalaman", "10"), 10);
-            double jarak = jarakKm(lat, lon, gLat, gLon);
-            double mmi = perkiraanMmi(mag, Math.sqrt(jarak * jarak + dalam * dalam));
             String potensi = g.optString("Potensi", "").toLowerCase(Locale.ROOT);
-            boolean tsunami = potensi.contains("tsunami") && !potensi.contains("tidak") && pesisir && jarak <= 600;
-            if (!tsunami && mmi < 4) continue;
+            boolean adaTsunami = potensi.contains("tsunami") && !potensi.contains("tidak");
+
+            // Tempat dengan dampak terberat (tsunami didahulukan, lalu MMI tertinggi)
+            Tempat terburuk = null;
+            double mmiTerburuk = 0, jarakTerburuk = 0;
+            boolean tsunamiTerburuk = false;
+            for (Tempat t : tempat) {
+                double jarak = jarakKm(t.lat, t.lon, gLat, gLon);
+                double mmi = perkiraanMmi(mag, Math.sqrt(jarak * jarak + dalam * dalam));
+                boolean tsunami = adaTsunami && t.pesisir && jarak <= 600;
+                boolean lebih = terburuk == null || (tsunami && !tsunamiTerburuk) || (tsunami == tsunamiTerburuk && mmi > mmiTerburuk);
+                if (lebih) {
+                    terburuk = t;
+                    mmiTerburuk = mmi;
+                    jarakTerburuk = jarak;
+                    tsunamiTerburuk = tsunami;
+                }
+            }
+            if (!tsunamiTerburuk && mmiTerburuk < 4) continue;
 
             sudah.add(id);
             String wilayah = g.optString("Wilayah", "");
-            String judul = (tsunami ? "POTENSI TSUNAMI" : mmi >= 6 ? "GEMPA KUAT" : "Gempa terasa")
-                    + String.format(Locale.US, ": M%.1f", mag);
-            String isi = (tsunami
-                    ? "Segera jauhi pantai ke tempat tinggi. "
-                    : "") + wilayah + " · " + bulatKm(jarak) + " dari " + label
-                    + " · perkiraan guncangan " + ROMAWI[(int) Math.max(0, Math.min(11, Math.round(mmi) - 1))]
+            String judul = (tsunamiTerburuk ? "POTENSI TSUNAMI" : mmiTerburuk >= 6 ? "GEMPA KUAT" : "Gempa terasa")
+                    + String.format(Locale.US, ": M%.1f", mag)
+                    + (terburuk.utama ? "" : " di dekat " + terburuk.nama);
+            String isi = (tsunamiTerburuk ? (terburuk.utama ? "Segera jauhi pantai ke tempat tinggi. " : "Hubungi keluarga di " + terburuk.nama + ". ") : "")
+                    + wilayah + " · " + bulatKm(jarakTerburuk) + " dari " + terburuk.nama
+                    + " · perkiraan guncangan " + ROMAWI[(int) Math.max(0, Math.min(11, Math.round(mmiTerburuk) - 1))]
                     + ". Buka aplikasi untuk langkah & rute evakuasi.";
             Notif.kirim(ctx, judul, isi, "gempa-" + id, true);
         }
@@ -166,7 +221,7 @@ public class PantauGempa extends JobService {
             java.util.Collections.sort(urut);
             sudah = new HashSet<>(urut.subList(urut.size() - 50, urut.size()));
         }
-        p.edit().putStringSet("sudah", sudah).apply();
+        p.edit().putStringSet("sudah", sudah).putLong("cek-terakhir", kini).apply();
     }
 
     // ---------- Perhitungan (sama dengan util.js / gempa.js) ----------

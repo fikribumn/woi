@@ -5,4 +5,11 @@
     <string name="kanal_peringatan_ket">Gempa yang diperkirakan terasa di lokasi Anda dan potensi tsunami dari BMKG</string>
     <string name="kanal_info">Informasi bencana</string>
     <string name="kanal_info_ket">Laporan banjir warga di sekitar dan pemberitahuan lain</string>
+    <string name="pintas_sos">SOS</string>
+    <string name="pintas_sos_panjang">SOS: saya terjebak</string>
+    <string name="pintas_darurat">Darurat</string>
+    <string name="pintas_darurat_panjang">Cari tempat aman &amp; rute</string>
+    <string name="pintas_aman">Saya aman</string>
+    <string name="pintas_aman_panjang">Kabari keluarga: saya aman</string>
+    <string name="pintas_112">Telepon 112</string>
 </resources>

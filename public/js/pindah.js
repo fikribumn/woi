@@ -25,6 +25,8 @@ export function pasangPindahPosisi({ setLokasi, lokasiKini }) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.id = 'btn-pindah';
+  btn.className = 'tbl-ekstra'; // muncul lewat tombol "Lainnya"
+
   btn.title = 'Pindah posisi / coba lokasi lain';
   btn.setAttribute('aria-label', 'Pindah posisi');
   btn.setAttribute('aria-expanded', 'false');

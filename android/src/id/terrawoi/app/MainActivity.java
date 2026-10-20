@@ -53,7 +53,7 @@ public class MainActivity extends Activity {
     /** Hanya sumber data yang dipakai api-inti.mjs yang boleh lewat proxy. */
     private static final Set<String> HOST_PROXY = new HashSet<>(Arrays.asList(
             "magma.esdm.go.id", "geoportal.esdm.go.id", "firms.modaps.eosdis.nasa.gov",
-            "overpass-api.de", "overpass.kumi.systems", "api.petabencana.id", "gis.bnpb.go.id"));
+            "overpass-api.de", "overpass.kumi.systems", "api.petabencana.id", "gis.bnpb.go.id", "www.bmkg.go.id"));
 
     private static final Map<String, String> MIME = new HashMap<>();
     static {
@@ -80,6 +80,7 @@ public class MainActivity extends Activity {
         super.onCreate(simpanan);
         Notif.siapkanKanal(this);
         PantauGempa.jadwalkan(this);
+        SiagaTinggi.mulai(this);
 
         akar = new FrameLayout(this);
         web = new WebView(this);
@@ -106,6 +107,32 @@ public class MainActivity extends Activity {
 
         if (simpanan != null) web.restoreState(simpanan);
         else web.loadUrl(AWAL);
+        aksiTertunda = aksiDari(getIntent());
+    }
+
+    // ---------- Pintasan layar utama (terrawoi://sos, ://darurat, ://aman) ----------
+    private String aksiTertunda;
+    private boolean halamanSiap;
+
+    private static String aksiDari(Intent i) {
+        Uri u = i == null ? null : i.getData();
+        if (u == null || !"terrawoi".equals(u.getScheme())) return null;
+        String a = u.getHost();
+        return a != null && a.matches("[a-z]+") ? a : null;
+    }
+
+    private void jalankanAksi() {
+        if (aksiTertunda == null || !halamanSiap) return;
+        web.evaluateJavascript("window.woiAksi && window.woiAksi('" + aksiTertunda + "')", null);
+        aksiTertunda = null;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        aksiTertunda = aksiDari(intent);
+        jalankanAksi();
     }
 
     // ---------- Tata letak tepi-ke-tepi ----------
@@ -167,6 +194,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        jembatan.tutup();
         web.destroy();
         super.onDestroy();
     }
@@ -249,6 +277,8 @@ public class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView v, String url) {
             kirimModeSistem();
+            halamanSiap = true;
+            jalankanAksi();
         }
     }
 

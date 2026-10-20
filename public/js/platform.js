@@ -52,6 +52,85 @@ if (diAplikasi) {
   };
 }
 
+// ---------- Data tersimpan untuk offline ----------
+// Setiap respons data yang berhasil disimpan di Cache Storage. Bila jaringan gagal (sinyal hilang, server
+// mati, waktu habis), versi tersimpan dipakai sehingga analisis terakhir tetap tampil. Permintaan dengan
+// { cache: 'no-store' } (mis. pemantauan live BMKG) tidak pernah memakai data lama.
+const KACHE_DATA = 'woi-data';
+const DATA_UTAMAKAN_JARINGAN = /^https:\/\/(data\.bmkg\.go\.id|earthquake\.usgs\.gov|(api|air-quality-api|flood-api)\.open-meteo\.com|macrostrat\.org|nominatim\.openstreetmap\.org|routing\.openstreetmap\.de)\//;
+const DATA_UTAMAKAN_CACHE = /^https:\/\/s3\.amazonaws\.com\/elevation-tiles-prod\//; // tile elevasi tidak pernah berubah
+const UMUR_DATA_MAKS = 14 * 24 * 3600e3;
+let dataTertua = null; // waktu (ms) data tersimpan tertua yang dipakai sejak mulaiSesiData()
+
+/** Dipanggil setiap analisis dimulai; dataTersimpanTertua() lalu memberi tahu apakah ada data lama yang dipakai. */
+export function mulaiSesiData() { dataTertua = null; }
+export const dataTersimpanTertua = () => dataTertua;
+
+if ('caches' in window) {
+  const fetchDasar = window.fetch.bind(window);
+  const jenisKache = (u) => {
+    if (u.origin === location.origin) return u.pathname.startsWith('/api/') ? 'jaringan' : null;
+    if (DATA_UTAMAKAN_JARINGAN.test(u.href)) return 'jaringan';
+    if (DATA_UTAMAKAN_CACHE.test(u.href)) return 'cache';
+    return null;
+  };
+  const simpan = async (kunci, res) => {
+    try {
+      const salinan = new Response(await res.clone().blob(), {
+        status: res.status,
+        headers: { 'content-type': res.headers.get('content-type') || 'application/octet-stream', 'x-waktu': String(Date.now()) },
+      });
+      await (await caches.open(KACHE_DATA)).put(kunci, salinan);
+    } catch { /* kuota penuh: abaikan */ }
+  };
+  const tersimpan = async (kunci) => {
+    try { return await (await caches.open(KACHE_DATA)).match(kunci); } catch { return null; }
+  };
+  window.fetch = async (input, init = {}) => {
+    const metode = (init.method || (typeof input === 'string' ? 'GET' : input.method) || 'GET').toUpperCase();
+    const u = new URL(typeof input === 'string' ? input : input.url, location.href);
+    const jenis = metode === 'GET' && init.cache !== 'no-store' ? jenisKache(u) : null;
+    if (!jenis) return fetchDasar(input, init);
+    const kunci = u.href;
+    if (jenis === 'cache') {
+      const ada = await tersimpan(kunci);
+      if (ada) return ada;
+      const res = await fetchDasar(input, init);
+      if (res.ok) simpan(kunci, res);
+      return res;
+    }
+    const pakaiLama = async (galat) => {
+      const ada = await tersimpan(kunci);
+      if (!ada) throw galat;
+      const waktu = Number(ada.headers.get('x-waktu')) || Date.now();
+      dataTertua = Math.min(dataTertua ?? waktu, waktu);
+      document.dispatchEvent(new CustomEvent('data:tersimpan', { detail: { waktu } }));
+      return ada;
+    };
+    try {
+      const res = await fetchDasar(input, init);
+      if (res.ok) {
+        await simpan(kunci, res);
+        return res;
+      }
+      if (res.status >= 500 || res.status === 429) return pakaiLama(new Error(`HTTP ${res.status}`)).catch(() => res);
+      return res;
+    } catch (e) {
+      return pakaiLama(e);
+    }
+  };
+  // Buang data yang terlalu lama (sekali per pemuatan, di latar)
+  setTimeout(async () => {
+    try {
+      const c = await caches.open(KACHE_DATA);
+      for (const req of await c.keys()) {
+        const res = await c.match(req);
+        if (Date.now() - Number(res?.headers.get('x-waktu') || 0) > UMUR_DATA_MAKS) await c.delete(req);
+      }
+    } catch { /* abaikan */ }
+  }, 20000);
+}
+
 // ---------- Notifikasi ----------
 /** 'granted' | 'denied' | 'default' | 'unsupported' */
 export function izinNotifikasi() {
@@ -130,6 +209,69 @@ export function warnaBilahSistem(warna, gelap) {
 }
 
 export const versiAplikasi = () => (diAplikasi ? asli.versi() : null);
+
+// ---------- SOS: senter, SMS massal ----------
+export const adaSenter = () => (diAplikasi ? asli.adaSenter() : false);
+export function senter(nyala) {
+  if (diAplikasi) asli.senter(!!nyala);
+}
+
+/** Buka aplikasi SMS dengan beberapa penerima sekaligus dan isi pesan. */
+export function smsKeSemua(nomor, teks) {
+  if (!nomor.length) return;
+  if (diAplikasi) return asli.smsKeSemua(JSON.stringify(nomor), teks);
+  location.href = `sms:${nomor.join(',')}?body=${encodeURIComponent(teks)}`;
+}
+
+// ---------- Suara (bacakan peringatan) ----------
+// WebView Android tidak punya speechSynthesis, jadi aplikasi memakai TextToSpeech native.
+export function bicara(teks, bahasa = 'id') {
+  if (diAplikasi) return asli.bicara(teks, bahasa);
+  if (!('speechSynthesis' in window)) return;
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(teks);
+  u.lang = bahasa === 'en' ? 'en-US' : 'id-ID';
+  u.rate = 0.95;
+  speechSynthesis.speak(u);
+}
+export function hentikanBicara() {
+  if (diAplikasi) return asli.hentikanBicara();
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+export const bisaBicara = () => diAplikasi || 'speechSynthesis' in window;
+
+// ---------- Lokasi tersimpan & siaga tinggi (aplikasi Android) ----------
+/** Daftar lokasi tersimpan untuk pemantauan latar: [{ nama, lat, lon, pesisir }]. */
+export function aturLokasiTersimpanLatar(daftar) {
+  if (diAplikasi) asli.aturLokasiTersimpan(JSON.stringify(daftar));
+}
+export const siagaTinggiAktif = () => (diAplikasi ? asli.siagaTinggiAktif() : false);
+export function aturSiagaTinggi(aktif) {
+  if (diAplikasi) asli.aturSiagaTinggi(!!aktif);
+}
+/** true bila aplikasi sudah dikecualikan dari optimasi baterai (pemantauan latar lebih andal). */
+export const bebasHematBaterai = () => (diAplikasi ? asli.bebasHematBaterai() : true);
+export function bukaPengaturanBaterai() {
+  if (diAplikasi) asli.bukaPengaturanBaterai();
+}
+
+// ---------- Aksi dari luar halaman (pintasan layar utama, ?aksi= di URL) ----------
+const aksi = {};
+const aksiTertunda = [];
+/** Daftarkan penangan aksi bernama (mis. 'sos', 'darurat', 'aman'). */
+export function daftarAksi(nama, fn) {
+  aksi[nama] = fn;
+  for (let i = aksiTertunda.length - 1; i >= 0; i--) {
+    if (aksiTertunda[i] === nama) {
+      aksiTertunda.splice(i, 1);
+      fn();
+    }
+  }
+}
+window.woiAksi = (nama) => {
+  if (aksi[nama]) aksi[nama]();
+  else aksiTertunda.push(nama);
+};
 
 // ---------- Tombol kembali (Android) ----------
 // Penutup yang didaftarkan modul (panel, lembar) dicoba dari yang terakhir dibuka. Native memanggil

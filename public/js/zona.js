@@ -260,7 +260,7 @@ kontrolLapisan.addOverlay(lapisanZona, '<b>Zona bahaya berwarna</b>');
 const bar = document.getElementById('zona-bar');
 bar.innerHTML = `
   <div class="zona-chips">${BAHAYA.map((b) => `<button type="button" data-z="${b.id}" title="${esc(PENJELASAN[b.id])}"><i data-lucide="${b.ikon}"></i>${b.label}</button>`).join('')}</div>
-  <div class="zona-legenda glass">${NAMA_LEVEL.map((n, i) => `<span><i data-lv="${i}" style="background:${WARNA_CSS[i]}"></i>${n}</span>`).join('')}<span class="zl-status" data-status></span></div>
+  <div class="zona-legenda glass" aria-label="Legenda: ${NAMA_LEVEL.join(', ')}"><span class="zl-ujung">${NAMA_LEVEL[0]}</span>${NAMA_LEVEL.map((n, i) => `<i data-lv="${i}" title="${n}" style="background:${WARNA_CSS[i]}"></i>`).join('')}<span class="zl-ujung">${NAMA_LEVEL[NAMA_LEVEL.length - 1]}</span><span class="zl-status" data-status></span></div>
   <div class="zona-ket glass" data-ket></div>`;
 document.addEventListener('tema:ganti', () => {
   hitungWarna();
@@ -269,7 +269,16 @@ document.addEventListener('tema:ganti', () => {
 });
 L.DomEvent.disableClickPropagation(bar);
 L.DomEvent.disableScrollPropagation(bar);
-bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => pilihBahaya(b.dataset.z)));
+// Chip dilipat: hanya pilihan aktif yang tampil. Ketuk untuk membuka semua pilihan, ketuk lagi untuk memilih.
+bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => {
+  if (!bar.classList.contains('terbuka')) {
+    bar.classList.add('terbuka');
+    return;
+  }
+  bar.classList.remove('terbuka');
+  pilihBahaya(b.dataset.z);
+}));
+document.addEventListener('click', (e) => { if (!e.target.closest('#zona-bar')) bar.classList.remove('terbuka'); });
 
 function perbaruiKontrol() {
   bar.querySelectorAll('[data-z]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.z === pilihan)));

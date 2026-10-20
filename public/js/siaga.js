@@ -3,17 +3,18 @@
 // di perangkat (localStorage).
 import { $, esc, fmtKm, setCard } from './util.js';
 import { renderIkon } from './ui.js';
-import { bagikan } from './platform.js';
+import { bagikan, smsKeSemua } from './platform.js';
+import { tr } from './bahasa.js';
 
 // Nomor layanan darurat nasional (bebas pulsa, bisa dari HP tanpa kartu SIM untuk 112).
 const LAYANAN = [
-  { no: '112', nama: 'Darurat', ket: 'Semua keadaan darurat', ikon: 'siren', warna: 'var(--red)' },
-  { no: '119', nama: 'Ambulans', ket: 'Gawat darurat medis (PSC)', ikon: 'ambulance', warna: 'var(--red)' },
-  { no: '113', nama: 'Pemadam', ket: 'Kebakaran & penyelamatan', ikon: 'flame', warna: 'var(--orange)' },
-  { no: '110', nama: 'Polisi', ket: 'Keamanan & kecelakaan', ikon: 'shield', warna: 'var(--blue)' },
-  { no: '115', nama: 'Basarnas', ket: 'Pencarian & pertolongan (SAR)', ikon: 'life-buoy', warna: 'var(--teal)' },
-  { no: '117', nama: 'BNPB', ket: 'Informasi & laporan bencana', ikon: 'megaphone', warna: 'var(--indigo)' },
-  { no: '123', nama: 'PLN', ket: 'Kabel listrik putus / gangguan', ikon: 'zap', warna: 'var(--yellow)' },
+  { no: '112', nama: ['Darurat', 'Emergency'], ket: ['Semua keadaan darurat', 'Any emergency'], ikon: 'siren', warna: 'var(--red)' },
+  { no: '119', nama: ['Ambulans', 'Ambulance'], ket: ['Gawat darurat medis (PSC)', 'Medical emergency'], ikon: 'ambulance', warna: 'var(--red)' },
+  { no: '113', nama: ['Pemadam', 'Fire'], ket: ['Kebakaran & penyelamatan', 'Fire & rescue'], ikon: 'flame', warna: 'var(--orange)' },
+  { no: '110', nama: ['Polisi', 'Police'], ket: ['Keamanan & kecelakaan', 'Security & accidents'], ikon: 'shield', warna: 'var(--blue)' },
+  { no: '115', nama: ['Basarnas', 'SAR'], ket: ['Pencarian & pertolongan (SAR)', 'Search and rescue'], ikon: 'life-buoy', warna: 'var(--teal)' },
+  { no: '117', nama: ['BNPB', 'BNPB'], ket: ['Informasi & laporan bencana', 'Disaster information'], ikon: 'megaphone', warna: 'var(--indigo)' },
+  { no: '123', nama: ['PLN', 'PLN'], ket: ['Kabel listrik putus / gangguan', 'Fallen power lines'], ikon: 'zap', warna: 'var(--yellow)' },
 ];
 
 // Isi Tas Siaga Bencana mengikuti panduan BNPB, untuk bertahan ±3 hari.
@@ -72,8 +73,8 @@ function teksStatus(jenis) {
   const jam = new Date().toLocaleString('id-ID', { weekday: 'long', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
   const tautan = l ? `https://maps.google.com/?q=${l.lat.toFixed(5)},${l.lon.toFixed(5)}` : '';
   const isi = jenis === 'aman'
-    ? `Saya AMAN. ${l?.label ? `Posisi saya di sekitar ${l.label}.` : ''} (${jam})`
-    : `Saya BUTUH BANTUAN. ${l?.label ? `Posisi saya di sekitar ${l.label}.` : ''} Mohon hubungi saya atau 112. (${jam})`;
+    ? tr(`Saya AMAN. ${l?.label ? `Posisi saya di sekitar ${l.label}.` : ''} (${jam})`, `I am SAFE. ${l?.label ? `I am near ${l.label}.` : ''} (${jam})`)
+    : tr(`Saya BUTUH BANTUAN. ${l?.label ? `Posisi saya di sekitar ${l.label}.` : ''} Mohon hubungi saya atau 112. (${jam})`, `I NEED HELP. ${l?.label ? `I am near ${l.label}.` : ''} Please contact me or call 112. (${jam})`);
   return { isi: isi.replace(/\s+/g, ' ').trim(), tautan };
 }
 
@@ -100,23 +101,26 @@ function renderKontak() {
   setCard('card-kontak', {
     badge: keluarga.length ? `${keluarga.length} keluarga` : '112',
     level: '',
-    summary: 'Ketuk untuk menelepon. Nomor darurat bebas pulsa; <b>112</b> bisa dihubungi walau pulsa habis.',
+    summary: tr('Ketuk untuk menelepon. Nomor darurat bebas pulsa; <b>112</b> bisa dihubungi walau pulsa habis.', 'Tap to call. Emergency numbers are free; <b>112</b> works even without credit.'),
     detail: `
       <div class="kd-grid">${LAYANAN.map((k) => `
-        <a class="kd-tombol" href="${telp(k.no)}" style="--c:${k.warna}" aria-label="Telepon ${esc(k.nama)} ${k.no}">
+        <a class="kd-tombol" href="${telp(k.no)}" style="--c:${k.warna}" aria-label="${tr('Telepon', 'Call')} ${esc(tr(...k.nama))} ${k.no}">
           <span class="row-ikon">${`<i data-lucide="${k.ikon}"></i>`}</span>
-          <span class="kd-no">${k.no}</span><span class="kd-nama">${esc(k.nama)}</span><span class="kd-ket">${esc(k.ket)}</span>
+          <span class="kd-no">${k.no}</span><span class="kd-nama">${esc(tr(...k.nama))}</span><span class="kd-ket">${esc(tr(...k.ket))}</span>
         </a>`).join('')}
       </div>
 
-      <h3 class="sub">Kabari keluarga</h3>
-      <p class="meta">Kirim status dan tautan lokasi lewat WhatsApp, SMS, atau aplikasi lain.</p>
-      <div class="hd-aksi kd-kabar">
-        <button type="button" class="btn-utama kd-aman" data-kabar="aman"><i data-lucide="heart-handshake"></i>Saya aman</button>
-        <button type="button" class="kd-tolong" data-kabar="tolong"><i data-lucide="hand-helping"></i>Butuh bantuan</button>
-      </div>
+      <button type="button" class="sos-112 kd-sos" data-kd-sos><i data-lucide="siren"></i>${tr('SOS: saya terjebak', 'SOS: I am trapped')}</button>
 
-      <h3 class="sub">Kontak keluarga</h3>
+      <h3 class="sub">${tr('Kabari keluarga', 'Tell your family')}</h3>
+      <p class="meta">${tr('Kirim status dan tautan lokasi lewat WhatsApp, SMS, atau aplikasi lain.', 'Send your status and location link via WhatsApp, SMS, or another app.')}</p>
+      <div class="hd-aksi kd-kabar">
+        <button type="button" class="btn-utama kd-aman" data-kabar="aman"><i data-lucide="heart-handshake"></i>${tr('Saya aman', "I'm safe")}</button>
+        <button type="button" class="kd-tolong" data-kabar="tolong"><i data-lucide="hand-helping"></i>${tr('Butuh bantuan', 'Need help')}</button>
+      </div>
+      ${keluarga.length > 1 ? `<div class="hd-aksi" style="margin-top:8px"><button type="button" data-sms-semua="aman" style="flex:1"><i data-lucide="message-square-text"></i>${tr(`SMS "saya aman" ke ${keluarga.length} kontak sekaligus`, `Text "I'm safe" to all ${keluarga.length} contacts`)}</button></div>` : ''}
+
+      <h3 class="sub">${tr('Kontak keluarga', 'Family contacts')}</h3>
       ${keluarga.length ? `<ul class="list kd-keluarga">${keluarga.map((k, i) => `
         <li>
           <div><b>${esc(k.nama)}</b><div class="meta">${esc(k.no)}</div></div>
@@ -151,6 +155,12 @@ function pasangKontak() {
   card.addEventListener('click', (e) => {
     const k = e.target.closest('[data-kabar]');
     if (k) return kabari(k.dataset.kabar, k);
+    const m = e.target.closest('[data-sms-semua]');
+    if (m) {
+      const { isi, tautan } = teksStatus(m.dataset.smsSemua);
+      return smsKeSemua(nomorKeluarga(), `${isi} ${tautan}`.trim());
+    }
+    if (e.target.closest('[data-kd-sos]')) return window.woiAksi('sos');
     const h = e.target.closest('[data-hapus]');
     if (h) {
       const daftar = baca('woi-keluarga', []);
@@ -252,4 +262,7 @@ export function aturFaskes(osm) {
   renderKontak();
 }
 
-export { kabari };
+/** Nomor HP semua kontak keluarga (untuk SMS sekaligus). */
+export const nomorKeluarga = () => baca('woi-keluarga', []).map((k) => nomorBersih(k.no)).filter((n) => n.length >= 5);
+
+export { kabari, teksStatus };

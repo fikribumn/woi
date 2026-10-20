@@ -8,6 +8,7 @@
 //   /api/laporan    laporan warga (banjir, kebakaran, asap, dll.) & area banjir Jakarta dari PetaBencana.id
 //   /api/gedung     bentuk & tinggi gedung sekitar titik untuk tampilan 3D (Overpass, di-cache)
 //   /api/evakuasi-resmi  titik kumpul / TES / TEA resmi BNPB (InaRISK) bila tersedia di area itu
+//   /api/cuaca-ekstrem   peringatan dini cuaca BMKG (nowcast, format CAP) yang areanya mencakup titik
 //
 // Pemanggil menyediakan dua hal:
 //   ambil(url, { timeout, json }) -> teks atau JSON; melempar galat bila HTTP tidak OK
@@ -145,6 +146,51 @@ const LAYER_EVAKUASI = [
   { svc: 'inarisk/RENEVAK_tsunami/MapServer/7', jenis: 'Evakuasi vertikal' },
   { svc: 'inarisk/RENEVAK_tsunami/MapServer/3', jenis: 'Evakuasi horizontal' },
 ];
+
+// ---------- BMKG: peringatan dini cuaca (nowcast) ----------
+// RSS berisi daftar peringatan aktif; tiap item menaut ke berkas CAP 1.2 berisi poligon area terdampak.
+const BMKG_NOWCAST = 'https://www.bmkg.go.id/alerts/nowcast/id/rss.xml';
+
+/** Isi tag XML pertama (CDATA dibuka, entitas dasar diurai). */
+function tagXml(xml, tag) {
+  const m = xml.match(new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`));
+  if (!m) return '';
+  return m[1].replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .trim();
+}
+const semuaTag = (xml, tag) => [...xml.matchAll(new RegExp(`<(?:\\w+:)?${tag}\\b[^>]*>([\\s\\S]*?)</(?:\\w+:)?${tag}>`, 'g'))].map((m) => m[0]);
+
+/** Poligon CAP: "lat,lon lat,lon ..." -> [[lat, lon], ...] */
+const poligonCap = (teks) => teks.trim().split(/\s+/).map((p) => p.split(',').map(Number)).filter((p) => p.length === 2 && p.every(Number.isFinite));
+
+function dalamPoligon(lat, lon, pol) {
+  let di = false;
+  for (let i = 0, j = pol.length - 1; i < pol.length; j = i++) {
+    const [ya, xa] = pol[i];
+    const [yb, xb] = pol[j];
+    if ((ya > lat) !== (yb > lat) && lon < ((xb - xa) * (lat - ya)) / (yb - ya) + xa) di = !di;
+  }
+  return di;
+}
+
+/** Ringkas satu berkas CAP menjadi peringatan; null bila sudah kedaluwarsa. */
+export function parseCap(xml) {
+  const info = semuaTag(xml, 'info')[0] || xml;
+  const berakhir = Date.parse(tagXml(info, 'expires'));
+  if (Number.isFinite(berakhir) && berakhir < Date.now()) return null;
+  return {
+    judul: tagXml(info, 'headline') || tagXml(info, 'event'),
+    kejadian: tagXml(info, 'event'),
+    isi: tagXml(info, 'description').slice(0, 600),
+    tingkat: tagXml(info, 'severity'),
+    berlaku: tagXml(info, 'effective') || tagXml(xml, 'sent'),
+    berakhir: Number.isFinite(berakhir) ? new Date(berakhir).toISOString() : null,
+    wilayah: semuaTag(info, 'area').map((a) => tagXml(a, 'areaDesc')).filter(Boolean).join(', ').slice(0, 300),
+    poligon: semuaTag(info, 'polygon').map((p) => poligonCap(tagXml(p, 'polygon'))).filter((p) => p.length >= 3),
+    web: tagXml(info, 'web') || null,
+  };
+}
 
 /** Kotak (minLon,minLat,maxLon,maxLat) selebar radiusKm di sekitar titik. */
 function amplop(lat, lon, radiusKm, desimal) {
@@ -351,6 +397,31 @@ export function buatApi({ ambil, disk = null }) {
     });
   }
 
+  // Semua peringatan nowcast aktif se-Indonesia (di-cache 10 menit), lalu disaring per titik.
+  function getNowcast() {
+    return cached('nowcast', 10 * 60e3, async () => {
+      const rss = await ambil(BMKG_NOWCAST, { timeout: 20000 });
+      const tautan = [...new Set(semuaTag(rss, 'item').map((it) => tagXml(it, 'link')).filter((l) => /^https:\/\//.test(l)))].slice(0, 60);
+      const hasil = [];
+      for (let i = 0; i < tautan.length; i += 8) { // 8 sekaligus agar tidak membebani server BMKG
+        const kelompok = await Promise.allSettled(tautan.slice(i, i + 8).map((u) => ambil(u, { timeout: 20000 })));
+        for (const k of kelompok) {
+          if (k.status !== 'fulfilled') continue;
+          const c = parseCap(k.value);
+          if (c && c.poligon.length) hasil.push(c);
+        }
+      }
+      return hasil;
+    });
+  }
+
+  async function getCuacaEkstrem(lat, lon) {
+    const semua = await getNowcast();
+    const kena = semua.filter((c) => c.poligon.some((p) => dalamPoligon(lat, lon, p)))
+      .map(({ poligon, ...c }) => c);
+    return { sumber: 'BMKG – Peringatan Dini Cuaca', totalIndonesia: semua.length, peringatan: kena };
+  }
+
   function getEvakuasiResmi(lat, lon) {
     const env = amplop(lat, lon, 15, 3);
     return cached(`bnpb-evak:${env}`, 24 * 3600e3, async () => {
@@ -389,6 +460,7 @@ export function buatApi({ ambil, disk = null }) {
     '/api/laporan': () => getLaporan(),
     '/api/gedung': (u) => { const { lat, lon } = koordinat(u); return getGedung(lat, lon); },
     '/api/evakuasi-resmi': (u) => { const { lat, lon } = koordinat(u); return getEvakuasiResmi(lat, lon); },
+    '/api/cuaca-ekstrem': (u) => { const { lat, lon } = koordinat(u); return getCuacaEkstrem(lat, lon); },
     '/api/titik-api': async (u) => {
       const { lat, lon } = koordinat(u);
       const r = Math.min(500, Math.max(1, parseFloat(u.searchParams.get('r')) || 100));
