@@ -168,14 +168,38 @@ Buka http://localhost:8080. Proyek ini butuh Node.js 18+ dan tidak memerlukan `n
 
 Lokasi bisa diatur lewat GPS, kolom pencarian, tombol **Analisis lokasi ini** pada popup peta, atau URL `?lat=-6.88&lon=107.62&zona=tsunami`. URL ini juga bisa dibagikan. 
 
+## Aplikasi Android
+
+Aplikasi Android dibuat dengan [Capacitor](https://capacitorjs.com): isi `public/` dibungkus menjadi APK. **Aplikasi ini tidak butuh server.** Permintaan ke sumber yang memblokir CORS dikirim lewat HTTP native perangkat (`public/js/native.js`), bukan lewat `server.js`.
+
+Kebutuhan (sekali saja): [Android Studio](https://developer.android.com/studio), yang sudah menyertakan JDK dan Android SDK.
+
+```bash
+npm install
+npm run android:buka     # salin public/ ke proyek Android lalu buka di Android Studio
+```
+
+Di Android Studio, tekan ▶ Run untuk memasang aplikasi ke HP (aktifkan *USB debugging*) atau emulator. Untuk membuat file APK, pilih **Build › Build APK(s)**. Setelah mengubah isi `public/`, jalankan `npm run android:sync` sebelum build ulang.
+
+Tanpa membuka Android Studio: `npm run android:apk` menghasilkan `android/app/build/outputs/apk/debug/app-debug.apk` (butuh `JAVA_HOME` dan `ANDROID_HOME`).
+
+Catatan versi aplikasi:
+- Izin lokasi diminta saat pertama kali memakai GPS.
+- Notifikasi browser belum tersedia di aplikasi. Peringatan tetap muncul di layar saat aplikasi terbuka.
+- Leaflet, Lucide, dan font masih dimuat dari CDN, jadi aplikasi butuh internet saat dibuka.
+
 ## Struktur
 
 ```
-server.js              Server statis + proxy/cache untuk sumber yang memblokir CORS
+server.js              Server statis + endpoint /api/* (versi web)
+capacitor.config.json  Konfigurasi aplikasi Android (Capacitor)
+android/               Proyek Android hasil `npx cap add android`
 public/index.html
 public/style.css
 public/js/
   main.js              Orkestrasi & pemilihan lokasi
+  sumber.js            Pengambil data /api/* (MAGMA, ESDM, FIRMS, Overpass, PetaBencana, BNPB), dipakai server & aplikasi
+  native.js            Mode aplikasi Android: /api/* dijalankan di perangkat lewat HTTP native
   konteks.js           Data bersama per lokasi (cuaca, geologi, OSM, grid elevasi)
   peta.js              Leaflet, lapisan ESDM, radius per bahaya
   config.js            Radius & ambang tiap bahaya
@@ -208,6 +232,8 @@ public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan 
 | `/api/osm?lat&lon` | OpenStreetMap Overpass: bangunan, titik kumpul, fasilitas, sungai, pantai | 7 hari di disk (`.cache/osm/`), dicoba ulang bila server sibuk |
 | `/api/gedung?lat&lon` | OpenStreetMap Overpass: bentuk & tinggi gedung radius 800 m | 7 hari di disk |
 | `/api/evakuasi-resmi?lat&lon` | BNPB InaRISK: titik kumpul, TES, TEA, evakuasi vertikal/horizontal (radius 15 km) | 24 jam |
+
+Di aplikasi Android, endpoint ini tidak memanggil server: `native.js` menjalankan `sumber.js` di perangkat dengan HTTP native (bebas CORS), dan data Overpass disimpan di Cache Storage selama 7 hari.
 
 Sumber lain diakses langsung dari browser: BMKG, USGS, Open-Meteo (cuaca, elevasi, kualitas udara, geocoding), Macrostrat (cadangan data geologi), dan Nominatim.
 

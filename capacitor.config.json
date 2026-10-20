@@ -1,0 +1,8 @@
+{
+  "appId": "id.terrawoi.app",
+  "appName": "TERRA WOI",
+  "webDir": "public",
+  "android": {
+    "allowMixedContent": false
+  }
+}

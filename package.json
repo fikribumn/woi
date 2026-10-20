@@ -5,9 +5,19 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js --dev"
+    "dev": "node --watch server.js --dev",
+    "android:sync": "cap sync android",
+    "android:buka": "cap open android",
+    "android:apk": "cap sync android && cd android && gradlew assembleDebug"
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3"
   }
 }

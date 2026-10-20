@@ -1,4 +1,5 @@
 // Utilitas bersama: DOM, geometri bumi, format, dan pengambilan data.
+import { diAplikasi, apiLokal } from './native.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
@@ -89,6 +90,7 @@ export function fmtKm(km) {
 
 // ---------- Jaringan ----------
 export async function getJson(url, opts = {}) {
+  if (diAplikasi && url.startsWith('/api/')) return apiLokal(url); // aplikasi Android: tanpa server
   const { timeout = 25000, ...rest } = opts;
   const res = await fetch(url, { ...rest, signal: AbortSignal.timeout(timeout) });
   if (!res.ok) {
