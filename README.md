@@ -21,6 +21,9 @@ Mode **Otomatis / Terang / Gelap** ada di panel yang sama. Setiap tema punya set
 Tata letaknya:
 - Peta penuh layar, label peta di lapisan terpisah di atas zona berwarna.
 - Di desktop, **panel kaca** mengambang di kiri dengan tinggi menyesuaikan isinya. Panel bisa **diciutkan** (tombol di pojok kanan atasnya) menjadi kartu kecil berisi lokasi dan ringkasan risiko. Pilihan ini diingat, dan panel otomatis diciutkan saat Mode Darurat dibuka. Di HP, panel menjadi **bottom sheet** yang mulai dari posisi intip, bisa ditarik ke setengah atau penuh, dan otomatis turun saat peta digeser.
+- **Kartu utama** di paling atas beranda berisi tingkat bahaya tertinggi, satu kalimat tindakan, dan tombol ke Tempat Paling Aman atau Titik Kumpul. Selama data lain masih dimuat, levelnya ditandai *Sementara* atau *Belum lengkap*, dan tidak pernah ditulis "aman". Kartu juga menyebut bagian yang masih memuat atau gagal.
+- **Banner peringatan** (tsunami atau bahaya tinggi) muncul di atas peta, di luar panel, agar tidak tertutup bottom sheet.
+- Kartu yang menunggu data OpenStreetMap (tsunami, hujan/banjir, titik kumpul) tampil dulu dengan data yang sudah ada, lalu dilengkapi. Bila data sungai gagal dimuat, banjir dinilai dengan anggapan lokasi dekat sungai.
 - Beranda mendahulukan tindakan (Titik Kumpul, Tempat Paling Aman, Jarak), lalu **ubin ringkasan** per bencana dengan warna tingkat risiko. Ketuk ubin untuk membuka halaman detail, lalu kembali lewat tombol "‹ Ringkasan".
 - Chip pemilih zona, legenda, dan tombol peta (lokasi, lapisan, muat ulang) mengambang di atas peta. Tombol merah **Darurat** ada di kanan bawah.
 - Ikon memakai Lucide, dan warna memakai palet sistem iOS.
@@ -132,7 +135,7 @@ Rute jalan kaki dianalisis terhadap medan: waktu dikoreksi tanjakan (fungsi Tobl
 
 ## Pemantauan live 🔴
 
-Indikator **LIVE** (kanan atas peta; di HP kiri bawah) memeriksa BMKG (`autogempa`, `gempadirasakan`) tiap 30 detik (`pantau.js`). Untuk setiap gempa baru dalam 1 jam terakhir, aplikasi menghitung perkiraan guncangan di lokasi Anda (MMI dari magnitudo, jarak, dan kedalaman):
+Indikator **LIVE** (kanan atas peta; di HP kiri bawah) langsung aktif begitu lokasi dipilih (tanpa menunggu analisis selesai) dan memeriksa BMKG (`autogempa`, `gempadirasakan`) tiap 30 detik (`pantau.js`). Selama status pesisir lokasi belum diketahui, lokasi dianggap pesisir agar peringatan tsunami tidak terlewat. Untuk setiap gempa baru dalam 1 jam terakhir, aplikasi menghitung perkiraan guncangan di lokasi Anda (MMI dari magnitudo, jarak, dan kedalaman):
 
 | Kondisi | Tindakan |
 |---|---|
