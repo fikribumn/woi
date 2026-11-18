@@ -219,7 +219,7 @@ function peringatkan(d) {
       <div class="lv-aksi">
         <button type="button" class="lv-utama" data-lv-evakuasi>${d.tsunami ? 'Rute ke tempat tinggi' : 'Langkah & rute evakuasi'}</button>
         <button type="button" data-lv-aman>Saya aman</button>
-        <button type="button" data-lv-senyap aria-label="Matikan suara"><i data-lucide="volume-x"></i></button>
+        <button type="button" data-lv-senyap aria-label="Matikan suara sirene"><i data-lucide="volume-off"></i> Senyap</button>
       </div>
       <p class="lv-sumber">Sumber: ${d.simulasi ? 'simulasi untuk latihan' : 'BMKG'}. Perkiraan guncangan dihitung dari magnitudo & jarak. Ikuti arahan resmi BMKG dan BPBD. Darurat: 112.</p>
     </div>`;
