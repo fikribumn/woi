@@ -23,6 +23,9 @@ export function buatKonteks(lat, lon) {
   Object.assign(ctx, { geologi: statis.geologi, osm: statis.osm, gridLokal: statis.gridLokal, gridLuas: statis.gridLuas });
   // Hindari "unhandled rejection" — setiap modul menangani galatnya sendiri.
   for (const k of ['cuaca', 'geologi', 'osm', 'gridLokal', 'gridLuas']) ctx[k].catch(() => {});
+  // Penanda: OSM sudah selesai (berhasil/gagal)? Modul memakainya untuk tampil dulu tanpa menunggu OSM.
+  ctx.osmSiap = false;
+  ctx.osm.then(() => { ctx.osmSiap = true; }, () => { ctx.osmSiap = true; });
   return ctx;
 }
 

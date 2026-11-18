@@ -5,9 +5,28 @@ import { garisJarak } from './peta.js';
 
 export async function muatTsunami(ctx) {
   const { lat, lon } = ctx;
-  const [osmR, gridR, geoR, subR, cuacaR] = await Promise.allSettled([
-    ctx.osm, ctx.gridLokal, ctx.geologi, getJson('data/subduksi.json'), ctx.cuaca,
+  const [gridR, geoR, subR, cuacaR] = await Promise.allSettled([
+    ctx.gridLokal, ctx.geologi, getJson('data/subduksi.json'), ctx.cuaca,
   ]);
+  if (ctx.batal()) return null;
+  if (!ctx.osmSiap) {
+    // Garis pantai (OSM) belum datang: tampilkan dulu data lain, tanpa menilai level.
+    const elev0 = gridR.status === 'fulfilled' ? gridR.value.pusat.elev : cuacaR.status === 'fulfilled' ? cuacaR.value.elevation : null;
+    const krb0 = geoR.status === 'fulfilled' && Array.isArray(geoR.value.krb_tsunami) ? geoR.value.krb_tsunami[0] : null;
+    const sub0 = subR.status === 'fulfilled' ? jarakKeGaris(lat, lon, subR.value.segmen) : null;
+    setCard('card-tsunami', {
+      badge: 'Menunggu data pantai',
+      level: '',
+      radius: `Radius ${RADIUS.tsunami.km} km dari pantai`,
+      summary: '<span class="muted">Memuat data garis pantai OpenStreetMap (bisa sampai 1 menit)… Tingkat bahaya belum dinilai.</span>',
+      detail: `<div class="facts">
+        ${fakta('Elevasi lokasi', elev0 != null ? `${Math.round(elev0)} m` : '—', 'DEM ±90 m')}
+        ${fakta('Zona subduksi', sub0 ? fmtKm(sub0.km) : '—', sub0 ? `arah ${arahKe(lat, lon, ...sub0.titik)}` : '')}
+        ${fakta('KRB tsunami resmi', krb0 ? esc(krb0.unsur.replace('Kawasan Rawan Bencana Tsunami ', '')) : 'tidak tercakup')}
+      </div>`,
+    });
+  }
+  const osmR = (await Promise.allSettled([ctx.osm]))[0];
   if (ctx.batal()) return null;
   if (osmR.status === 'rejected') throw new Error(`Data garis pantai (OpenStreetMap) gagal: ${osmR.reason.message}`);
 

@@ -259,9 +259,10 @@ kontrolLapisan.addOverlay(lapisanZona, '<b>Zona bahaya berwarna</b>');
 // ---------- Kontrol: chip pemilih bencana + legenda (mengambang di atas peta) ----------
 const bar = document.getElementById('zona-bar');
 bar.innerHTML = `
-  <div class="zona-chips">${BAHAYA.map((b) => `<button type="button" data-z="${b.id}" title="${esc(PENJELASAN[b.id])}"><i data-lucide="${b.ikon}"></i>${b.label}</button>`).join('')}</div>
-  <div class="zona-legenda glass">${NAMA_LEVEL.map((n, i) => `<span><i data-lv="${i}" style="background:${WARNA_CSS[i]}"></i>${n}</span>`).join('')}<span class="zl-status" data-status></span></div>
-  <div class="zona-ket glass" data-ket></div>`;
+  <div class="zona-chips">${BAHAYA.map((b) => `<button type="button" data-z="${b.id}"><i data-lucide="${b.ikon}"></i>${b.label}</button>`).join('')}</div>
+  <div class="zona-legenda glass">${NAMA_LEVEL.map((n, i) => `<span><i data-lv="${i}" style="background:${WARNA_CSS[i]}"></i>${n}</span>`).join('')}<span class="zl-status" data-status></span>`
+  + '<button type="button" class="zl-info" data-info aria-expanded="false" aria-controls="zona-ket" aria-label="Apa arti warna zona?"><i data-lucide="info"></i></button></div>'
+  + '<p class="zona-ket glass" id="zona-ket" data-ket hidden></p>';
 document.addEventListener('tema:ganti', () => {
   hitungWarna();
   bar.querySelectorAll('[data-lv]').forEach((i) => { i.style.background = WARNA_CSS[+i.dataset.lv]; });
@@ -270,6 +271,12 @@ document.addEventListener('tema:ganti', () => {
 L.DomEvent.disableClickPropagation(bar);
 L.DomEvent.disableScrollPropagation(bar);
 bar.querySelectorAll('[data-z]').forEach((b) => b.addEventListener('click', () => pilihBahaya(b.dataset.z)));
+// Penjelasan zona: bisa diketuk (title tidak muncul di layar sentuh)
+$('[data-info]', bar).addEventListener('click', (e) => {
+  const ketEl = $('[data-ket]', bar);
+  ketEl.hidden = !ketEl.hidden;
+  e.currentTarget.setAttribute('aria-expanded', String(!ketEl.hidden));
+});
 
 function perbaruiKontrol() {
   bar.querySelectorAll('[data-z]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.z === pilihan)));
@@ -280,7 +287,6 @@ function perbaruiKontrol() {
   $('[data-status]', bar).textContent = status;
   const ket = `${PENJELASAN[pilihan]} Ketuk peta untuk cek titik mana pun.`;
   $('[data-ket]', bar).textContent = ket;
-  $('.zona-legenda', bar).title = ket;
 }
 map.on('zoomend', perbaruiKontrol);
 

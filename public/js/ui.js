@@ -76,18 +76,99 @@ function sinkronUbin(id) {
 }
 
 const NAMA_LV = { rendah: 'Rendah', sedang: 'Sedang', tinggi: 'Tinggi', bahaya: 'Sangat tinggi' };
+// Satu kalimat tindakan + satu tombol per tingkat. Hanya pesan tampilan: level diambil dari kartu yang sudah dihitung modul lain.
+const AKSI = {
+  rendah: { ikon: 'shield-check', teks: 'Tidak ada bahaya menonjol. Tetap kenali titik kumpul terdekat.', ke: 'card-titik', tombol: 'Lihat titik kumpul' },
+  sedang: { ikon: 'triangle-alert', teks: 'Tetap waspada. Kenali jalan ke titik kumpul terdekat.', ke: 'card-titik', tombol: 'Lihat titik kumpul' },
+  tinggi: { ikon: 'triangle-alert', teks: 'Siapkan tas siaga dan ketahui tempat aman terdekat.', ke: 'card-aman', tombol: 'Ke tempat paling aman' },
+  bahaya: { ikon: 'octagon-alert', teks: 'Bersiap pindah ke tempat aman. Ikuti arahan BPBD.', ke: 'card-aman', tombol: 'Ke tempat paling aman' },
+};
+const AKSI_TSUNAMI = { ikon: 'waves', teks: 'Jika di dekat pantai, segera menjauh ke tempat tinggi.', ke: 'card-aman', tombol: 'Ke tempat paling aman' };
+
+let bannerDitutup = '';
+
 function ringkasRisiko() {
-  const daftar = KARTU
-    .map((k) => ({ ...k, level: document.getElementById(k.id).querySelector('[data-badge]').dataset.level || '' }))
-    .filter((k) => k.level && k.id !== 'card-bangunan');
+  const semua = KARTU.filter((k) => k.id !== 'card-bangunan').map((k) => {
+    const b = document.getElementById(k.id).querySelector('[data-badge]');
+    const level = b.dataset.level || '';
+    const gagal = !level && /tidak tersedia/i.test(b.textContent);
+    return { ...k, level, gagal, memuat: !level && !gagal };
+  });
+  const daftar = semua.filter((k) => k.level);
+  const memuat = semua.filter((k) => k.memuat).map((k) => k.judul);
+  const gagal = semua.filter((k) => k.gagal).map((k) => k.judul);
+  const alertTsunami = $('#alert-tsunami');
+  const tsunami = alertTsunami && !alertTsunami.hidden;
+
+  // Status memuat yang jujur: sebut bagian yang belum siap atau gagal
+  const status = [
+    memuat.length ? `Masih memuat: ${memuat.map(esc).join(', ')}.` : '',
+    gagal.length ? `Tidak tersedia: ${gagal.map(esc).join(', ')}.` : '',
+  ].filter(Boolean).join(' ');
+  const statusHtml = status ? `<p class="ku-status">${status}</p>` : '';
+
   const el = $('#ringkas-risiko');
-  if (!daftar.length) return;
-  const maks = Math.max(...daftar.map((k) => URUTAN_LEVEL[k.level]));
+  if (!daftar.length && !tsunami) {
+    el.innerHTML = `<span class="muted">${gagal.length && !memuat.length ? 'Data bahaya belum bisa dimuat.' : 'Menganalisis bahaya di sekitar…'}</span>${statusHtml}`;
+    perbaruiBanner(null);
+    return;
+  }
+  const maks = daftar.length ? Math.max(...daftar.map((k) => URUTAN_LEVEL[k.level])) : 0;
   const teratas = daftar.filter((k) => URUTAN_LEVEL[k.level] === maks);
-  const lv = teratas[0].level;
-  el.innerHTML = maks <= 1
-    ? '<b>Kondisi umumnya aman.</b> <span class="muted">Tidak ada bahaya menonjol saat ini.</span>'
-    : `<span class="muted">Perhatian utama:</span> <b style="color:var(--${{ sedang: 't-yellow', tinggi: 't-orange', bahaya: 't-red' }[lv]})">${teratas.map((k) => esc(k.judul)).join(', ')}</b> <span class="muted">· ${NAMA_LV[lv]}</span>`;
+  const lv = tsunami ? 'bahaya' : (teratas[0]?.level || 'rendah');
+  const aksi = tsunami ? AKSI_TSUNAMI : AKSI[lv];
+  const nama = teratas.map((k) => k.judul).join(', ');
+  const judul = tsunami ? 'Peringatan tsunami'
+    : maks <= 1 ? 'Umumnya aman' : `${esc(nama)}: ${NAMA_LV[lv]}`;
+  const detail = tsunami ? 'card-tsunami' : (maks > 1 ? teratas[0].id : null);
+
+  el.innerHTML = `
+    <div class="kartu-utama" data-level="${lv}">
+      <div class="ku-atas">
+        <span class="ku-ikon">${ikon(aksi.ikon)}</span>
+        <div class="ku-teks">
+          <p class="ku-level">${judul}</p>
+          <p class="ku-aksi">${aksi.teks}</p>
+        </div>
+      </div>
+      <div class="ku-tombol">
+        <button type="button" class="ku-utama" data-ke="${aksi.ke}">${ikon(aksi.ke === 'card-aman' ? 'shield-check' : 'flag')}${aksi.tombol}</button>
+        ${detail ? `<button type="button" class="ku-detail" data-ke="${detail}">Detail</button>` : ''}
+      </div>
+    </div>${statusHtml}`;
+  el.querySelectorAll('[data-ke]').forEach((b) => b.addEventListener('click', (e) => {
+    e.stopPropagation();
+    bukaHalaman(b.dataset.ke);
+  }));
+  renderIkon(el);
+
+  perbaruiBanner(tsunami || maks >= 3 ? { lv, aksi, judul, detail } : null);
+}
+
+// ---------- Banner peringatan di atas peta (tidak tertutup panel bawah di HP) ----------
+function perbaruiBanner(info) {
+  const el = $('#banner-bahaya');
+  if (!el) return;
+  const kunci = info ? `${info.lv}|${info.judul}` : '';
+  if (!info || kunci === bannerDitutup) {
+    el.hidden = true;
+    return;
+  }
+  el.dataset.level = info.lv;
+  el.innerHTML = `
+    <button type="button" class="bb-isi" data-ke="${info.detail || info.aksi.ke}">
+      ${ikon(info.aksi.ikon, 'bb-ikon')}
+      <span class="bb-teks"><b>${info.judul}</b> <span>${info.aksi.teks}</span></span>
+    </button>
+    <button type="button" class="bb-aksi" data-ke="${info.aksi.ke}">${info.aksi.ke === 'card-aman' ? 'Tempat aman' : 'Titik kumpul'}</button>
+    <button type="button" class="bb-tutup" aria-label="Tutup peringatan">${ikon('x')}</button>`;
+  el.querySelectorAll('[data-ke]').forEach((b) => b.addEventListener('click', () => bukaHalaman(b.dataset.ke)));
+  $('.bb-tutup', el).addEventListener('click', () => {
+    bannerDitutup = kunci;
+    el.hidden = true;
+  });
+  el.hidden = false;
+  renderIkon(el);
 }
 
 function amatiKartu() {
@@ -98,6 +179,9 @@ function amatiKartu() {
     obs.observe($('[data-summary]', card), { childList: true, characterData: true, subtree: true });
     sinkronUbin(k.id);
   }
+  // Peringatan tsunami diisi modul gempa; ringkasan & banner ikut diperbarui saat ia muncul/hilang
+  const alertTsunami = $('#alert-tsunami');
+  if (alertTsunami) new MutationObserver(ringkasRisiko).observe(alertTsunami, { attributes: true, attributeFilter: ['hidden'], childList: true });
 }
 
 // ---------- Navigasi halaman ----------

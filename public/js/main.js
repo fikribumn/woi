@@ -37,6 +37,8 @@ const MODUL = {
   titik: ['card-titik', muatTitikKumpul],
 };
 
+const KARTU_TUNGGU_OSM = ['card-tsunami', 'card-hujan', 'card-bangunan', 'card-titik', 'card-aman', 'card-jarak'];
+
 let lokasi = { ...DEFAULT_LOC };
 let aktif = null;
 
@@ -57,6 +59,18 @@ async function muatSemua() {
   kosongkanZona();
   setLoading();
   setMemuat(true);
+
+  // Kartu yang bergantung pada OSM/cuaca: bila masih "Memuat…" setelah ±5 detik, beri tahu penyebabnya.
+  const tungguOsm = setTimeout(() => {
+    if (ctx.batal()) return;
+    for (const id of KARTU_TUNGGU_OSM) {
+      const el = document.querySelector(`#${id} [data-summary]`);
+      if (el && el.textContent.trim() === 'Memuat…') {
+        el.innerHTML = '<span class="muted">Memuat data peta OpenStreetMap (bisa sampai 1 menit)…</span>';
+      }
+    }
+  }, 5000);
+  ctx.osm.catch(() => {}).finally(() => clearTimeout(tungguOsm));
 
   const entri = Object.entries(MODUL);
   const hasil = await Promise.allSettled(entri.map(([, [cardId, fn]]) => fn(ctx).catch((err) => {

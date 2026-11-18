@@ -76,14 +76,27 @@ export function ringkasHujan(cuaca) {
 
 export async function muatHujan(ctx) {
   const { lat, lon } = ctx;
-  const [cuacaR, lerengR, geoR, osmR, gridR, debitR] = await Promise.allSettled([
-    ctx.cuaca, lerengHalus(lat, lon), ctx.geologi, ctx.osm, ctx.gridLokal, debitSungai(lat, lon),
+  const [cuacaR, lerengR, geoR, gridR, debitR] = await Promise.allSettled([
+    ctx.cuaca, lerengHalus(lat, lon), ctx.geologi, ctx.gridLokal, debitSungai(lat, lon),
     // Laporan warga dipakai bila sudah termuat (maks. tunggu 8 detik)
     Promise.race([siapLaporan, new Promise((r) => setTimeout(r, 8000))]),
   ]);
   if (ctx.batal()) return null;
   if (cuacaR.status === 'rejected') throw cuacaR.reason;
+  const data = { cuacaR, lerengR, geoR, gridR, debitR };
+  // Bila OSM (sungai) belum datang, tampilkan dulu bagian longsor/hujan, lalu lengkapi setelah OSM tiba.
+  if (!ctx.osmSiap) {
+    renderHujan(ctx, data, null);
+    const osmR = (await Promise.allSettled([ctx.osm]))[0];
+    if (ctx.batal()) return null;
+    return renderHujan(ctx, data, osmR);
+  }
+  return renderHujan(ctx, data, (await Promise.allSettled([ctx.osm]))[0]);
+}
 
+// osmR === null: tampilan sementara (OSM belum tiba), tanpa penilaian banjir.
+function renderHujan(ctx, { cuacaR, lerengR, geoR, gridR, debitR }, osmR) {
+  const { lat, lon } = ctx;
   const h = ringkasHujan(cuacaR.value);
   const lereng = lerengR.status === 'fulfilled' ? lerengR.value : null;
   const geo = geoR.status === 'fulfilled' ? geoR.value : null;
@@ -120,6 +133,24 @@ export async function muatHujan(ctx) {
     }
   }
 
+  if (!osmR) {
+    const namaSem = { rendah: 'Rendah', sedang: 'Sedang', tinggi: 'Tinggi', bahaya: 'Sangat tinggi' };
+    setCard('card-hujan', {
+      badge: 'Sementara',
+      level: lvLongsor === 'rendah' ? '' : lvLongsor,
+      radius: `Radius analisis ${RADIUS.longsor.km} km (lereng & sungai)`,
+      summary: `<b>Longsor ${namaSem[lvLongsor].toLowerCase()} (sementara).</b> ${ketLongsor}<br><span class="muted">Penilaian banjir menunggu data sungai OpenStreetMap (bisa sampai 1 menit)…</span>`,
+      detail: `<div class="facts">
+        ${fakta('Hujan 72 jam terakhir', `${h.lalu72.toFixed(0)} mm`)}
+        ${fakta('Prakiraan 24 jam', `${h.depan24.toFixed(0)} mm`, `peluang hujan ${h.peluang24}%`)}
+        ${fakta('Zona kerentanan gerakan tanah', zkgt ? esc(zkgt.unsur) : '—', zkgt ? `Badan Geologi${zkgt.tahun ? `, ${zkgt.tahun}` : ''}` : 'tidak ada data')}
+        ${fakta('Kemiringan lereng (±300 m)', lereng ? `${lereng.derajat.toFixed(1)}°` : '—', lereng ? `elevasi ${Math.round(lereng.elevasi)} m` : '')}
+      </div>`,
+    });
+    return null;
+  }
+  const osmGagal = osmR.status === 'rejected';
+
   // ----- Banjir: dekat sungai + rendah relatif sekitar + hujan -----
   let sungai = null;
   if (osmR.status === 'fulfilled' && osmR.value.sungai.length) {
@@ -136,7 +167,8 @@ export async function muatHujan(ctx) {
     const el = gridR.value.titik.map((t) => t.elev).sort((a, b) => a - b);
     posisiRelatif = gridR.value.pusat.elev - el[Math.floor(el.length / 2)];
   }
-  const dekatSungai = sungai && sungai.km <= 0.3;
+  // Data sungai gagal dimuat: anggap dekat sungai (kasus terburuk) agar bahaya banjir tidak diremehkan.
+  const dekatSungai = osmGagal || (sungai && sungai.km <= 0.3);
   const cekungan = posisiRelatif != null && posisiRelatif < -5;
   let lvBanjir = 'rendah';
   if (skorHujan >= 2 && (dekatSungai || cekungan)) lvBanjir = 'tinggi';
@@ -155,8 +187,11 @@ export async function muatHujan(ctx) {
 
   const level = levelMaks(lvLongsor, lvBanjir);
   const nama = { rendah: 'Rendah', sedang: 'Sedang', tinggi: 'Tinggi', bahaya: 'Sangat tinggi' };
-  const badge = nama[level];
-  let summary = `<b>Longsor ${nama[lvLongsor].toLowerCase()}, banjir ${nama[lvBanjir].toLowerCase()}.</b> ${ketLongsor}`;
+  // Data sungai OSM gagal: banjir "rendah" belum berarti aman, jangan tampilkan sebagai level rendah.
+  const belumLengkap = osmGagal && level === 'rendah';
+  const badge = belumLengkap ? 'Belum lengkap' : nama[level];
+  let summary = `<b>Longsor ${nama[lvLongsor].toLowerCase()}, banjir ${osmGagal ? `${nama[lvBanjir].toLowerCase()} (perkiraan)` : nama[lvBanjir].toLowerCase()}.</b> ${ketLongsor}`;
+  if (osmGagal) summary += ' <span class="muted">Data sungai OpenStreetMap tidak tersedia, jadi penilaian banjir belum lengkap dan dibuat waspada (dianggap dekat sungai).</span>';
   if (lvBanjir !== 'rendah') {
     summary += ` <b>Waspada banjir</b>${dekatSungai ? ` — lokasi ${fmtKm(sungai.km)} dari sungai` : ''}${cekungan ? `${dekatSungai ? ' dan' : ' —'} berada di daerah lebih rendah dari sekitarnya` : ''}.`;
   }
@@ -184,7 +219,7 @@ export async function muatHujan(ctx) {
 
   setCard('card-hujan', {
     badge,
-    level,
+    level: belumLengkap ? '' : level,
     radius: `Radius analisis ${RADIUS.longsor.km} km (lereng & sungai)`,
     summary,
     detail: `
@@ -193,7 +228,7 @@ export async function muatHujan(ctx) {
         ${fakta('Prakiraan 24 jam', `${h.depan24.toFixed(0)} mm`, `peluang hujan ${h.peluang24}%`)}
         ${fakta('Zona kerentanan gerakan tanah', zkgt ? esc(zkgt.unsur) : '—', zkgt ? `Badan Geologi${zkgt.tahun ? `, ${zkgt.tahun}` : ''}` : 'tidak ada data')}
         ${fakta('Kemiringan lereng (±300 m)', lereng ? `${lereng.derajat.toFixed(1)}°` : '—', lereng ? `elevasi ${Math.round(lereng.elevasi)} m` : '')}
-        ${fakta('Sungai terdekat', sungai ? fmtKm(sungai.km) : '—', sungai ? `${esc(sungai.nama || 'tanpa nama')} · arah ${arahKe(lat, lon, ...sungai.titik)}` : `tidak ada dalam ${RADIUS.longsor.km} km`)}
+        ${fakta('Sungai terdekat', sungai ? fmtKm(sungai.km) : '—', sungai ? `${esc(sungai.nama || 'tanpa nama')} · arah ${arahKe(lat, lon, ...sungai.titik)}` : osmGagal ? 'data OpenStreetMap tidak tersedia' : `tidak ada dalam ${RADIUS.longsor.km} km`)}
         ${fakta('Posisi terhadap sekitar', posisiRelatif == null ? '—' : `${posisiRelatif >= 0 ? '+' : ''}${Math.round(posisiRelatif)} m`, 'dibanding median ±3 km')}
         ${faktaDebit}
         ${faktaLaporan}
@@ -211,5 +246,5 @@ export async function muatHujan(ctx) {
       </ul>`,
   });
 
-  return { level, lvLongsor, lvBanjir, sungai, skorHujan, ringkas: h };
+  return { level, lvLongsor, lvBanjir, sungai, skorHujan, osmGagal, ringkas: h };
 }

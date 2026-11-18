@@ -160,14 +160,19 @@ function renderKartu() {
   const hitung = (j) => daftar.filter((t) => t.jenis === j).length;
   const utama = daftar.filter((t) => t.jenis !== 'potensial');
   const terdekat = utama[0];
-  const { galatResmi, osm } = sumberTerakhir;
+  const { galatResmi, osm, osmMenunggu } = sumberTerakhir;
 
   let summary;
   if (terdekat) {
     summary = `Titik kumpul terdekat: <b>${esc(namaTitik(terdekat))}</b> (${JENIS[terdekat.jenis].label.toLowerCase()}), ${fmtKm(terdekat.jarak)} ke arah ${arahKe(pusat.lat, pusat.lon, terdekat.lat, terdekat.lon)}.`;
+  } else if (osmMenunggu) {
+    summary = 'Memuat data titik kumpul OpenStreetMap (bisa sampai 1 menit)…';
+  } else if (!osm) {
+    summary = 'Data titik kumpul OpenStreetMap tidak tersedia, jadi belum diketahui ada atau tidaknya titik kumpul di sekitar lokasi.';
   } else {
     summary = 'Belum ada titik kumpul resmi/terpetakan di sekitar lokasi ini.';
   }
+  if (osmMenunggu && terdekat) summary += ' <span class="muted">Titik OpenStreetMap masih dimuat…</span>';
   if (!hitung('resmi')) summary += ' <span class="muted">Data resmi BNPB belum mencakup area ini; tanyakan lokasi titik kumpul ke BPBD/RT setempat lalu tandai di peta.</span>';
 
   const baris = utama.slice(0, 8).map((t) => `
@@ -176,7 +181,7 @@ function renderKartu() {
       <div class="right">${fmtKm(t.jarak)}<div class="meta">${arahKe(pusat.lat, pusat.lon, t.lat, t.lon)}</div></div></li>`).join('');
 
   setCard('card-titik', {
-    badge: utama.length ? `${utama.length} titik` : 'Data minim',
+    badge: utama.length ? `${utama.length} titik` : osmMenunggu ? 'Memuat…' : !osm ? 'Tidak tersedia' : 'Data minim',
     level: '',
     radius: 'Radius 15 km (kandidat potensial 3 km)',
     summary,
@@ -191,7 +196,7 @@ function renderKartu() {
       <h3 class="sub">Menandai titik kumpul</h3>
       <p class="meta">Ketuk lokasi di peta, lalu pilih <b>Tandai sebagai titik kumpul</b>. Titik ini dipakai di Tempat Paling Aman dan Mode Darurat (bila berada di zona aman), dan hanya tersimpan di perangkat ini.</p>
       ${galatResmi ? `<p class="meta muted">Data BNPB tidak dapat dihubungi: ${esc(galatResmi)}</p>` : ''}
-      ${!osm ? '<p class="meta muted">Data OpenStreetMap belum tersedia (server sibuk).</p>' : ''}
+      ${!osm ? `<p class="meta muted">${osmMenunggu ? 'Data OpenStreetMap sedang dimuat.' : 'Data OpenStreetMap tidak tersedia (server sibuk).'}</p>` : ''}
       <p class="meta muted">Peta menampilkan ${MAKS_TAMPIL} titik terdekat; titik lain muncul saat peta diperbesar. Titik abu-abu kecil adalah bangunan yang <b>berpotensi</b> menjadi tempat evakuasi, bukan titik resmi.</p>`,
   });
   document.querySelectorAll('#card-titik [data-ll]').forEach((li) => li.addEventListener('click', () => {
@@ -201,16 +206,16 @@ function renderKartu() {
 }
 
 export async function muatTitikKumpul(ctx) {
-  const [osmR, resmiR] = await Promise.allSettled([
-    ctx.osm,
-    getJson(`/api/evakuasi-resmi?lat=${ctx.lat.toFixed(4)}&lon=${ctx.lon.toFixed(4)}`, { timeout: 60000 }),
-  ]);
+  const resmiP = getJson(`/api/evakuasi-resmi?lat=${ctx.lat.toFixed(4)}&lon=${ctx.lon.toFixed(4)}`, { timeout: 60000 });
+  const resmiR = (await Promise.allSettled([resmiP]))[0];
   if (ctx.batal()) return null;
   pusat = { lat: ctx.lat, lon: ctx.lon };
-  susun(pusat, {
-    resmi: resmiR.status === 'fulfilled' ? resmiR.value.titik : [],
-    galatResmi: resmiR.status === 'rejected' ? resmiR.reason.message : null,
-    osm: osmR.status === 'fulfilled' ? osmR.value : null,
-  });
+  const resmi = resmiR.status === 'fulfilled' ? resmiR.value.titik : [];
+  const galatResmi = resmiR.status === 'rejected' ? resmiR.reason.message : null;
+  // Tampilkan dulu titik resmi/pribadi; titik OSM menyusul bila OSM belum datang.
+  if (!ctx.osmSiap) susun(pusat, { resmi, galatResmi, osm: null, osmMenunggu: true });
+  const osmR = (await Promise.allSettled([ctx.osm]))[0];
+  if (ctx.batal()) return null;
+  susun(pusat, { resmi, galatResmi, osm: osmR.status === 'fulfilled' ? osmR.value : null });
   return { daftar };
 }

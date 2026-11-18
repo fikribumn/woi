@@ -32,6 +32,8 @@
 
     <!-- Pencarian mengambang -->
     <div class="float-top">
+      <!-- Peringatan level tinggi: di atas peta, tidak tertutup panel bawah -->
+      <div id="banner-bahaya" class="banner-bahaya" role="alert" hidden></div>
       <form id="form-cari" class="search glass" autocomplete="off" role="search">
         <i data-lucide="search" aria-hidden="true"></i>
         <input id="input-cari" type="search" placeholder="Cari kota atau kecamatan" aria-label="Cari lokasi">
@@ -75,7 +77,7 @@
             <p class="merek" aria-label="TERRA WOI"><span>TERRA</span> WOI</p>
             <p class="eyebrow">Lokasi diperiksa</p>
             <h1 id="lokasi-label">Menentukan lokasi…</h1>
-            <div class="ringkas" id="ringkas-risiko"><span class="muted">Menganalisis bahaya di sekitar…</span></div>
+            <div class="ringkas" id="ringkas-risiko" aria-live="polite"><span class="muted">Menganalisis bahaya di sekitar…</span></div>
           </header>
 
           <div id="alert-tsunami" class="alert" hidden></div>
