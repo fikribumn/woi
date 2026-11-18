@@ -18,12 +18,20 @@ export const JENIS = {
   potensial: { label: 'Potensial, tidak resmi', warna: '#8e8e93', bonus: 0, huruf: '', urut: 4 },
 };
 
+// Agar peta tidak penuh penanda: hanya beberapa titik terdekat (dan titik pribadi) yang selalu tampil.
+// Titik lain baru muncul saat peta diperbesar, kandidat potensial lebih dekat lagi.
+const MAKS_TAMPIL = 5;
+const ZOOM_LAIN = 15;
+const ZOOM_POTENSIAL = 16;
 const lapisanUtama = L.layerGroup().addTo(map);
+const lapisanLain = L.layerGroup();
 const lapisanPotensial = L.layerGroup();
-map.on('zoomend', () => {
-  if (map.getZoom() >= 14) lapisanPotensial.addTo(map);
-  else lapisanPotensial.remove();
-});
+function aturZoom() {
+  const z = map.getZoom();
+  if (z >= ZOOM_LAIN) lapisanLain.addTo(map); else lapisanLain.remove();
+  if (z >= ZOOM_POTENSIAL) lapisanPotensial.addTo(map); else lapisanPotensial.remove();
+}
+map.on('zoomend', aturZoom);
 
 let daftar = [];
 let pusat = null;
@@ -101,7 +109,9 @@ function ikon(t) {
   if (t.jenis === 'potensial') {
     return L.divIcon({ className: '', html: `<div class="tk-dot" style="--c:${j.warna}"></div>`, iconSize: [10, 10], iconAnchor: [5, 5] });
   }
-  return L.divIcon({ className: '', html: `<div class="tk-pin" style="--c:${j.warna}">${j.huruf}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+  // Hanya titik resmi dan pribadi yang diberi simbol; titik OSM cukup pin berwarna polos.
+  const isi = t.jenis === 'resmi' || t.jenis === 'pribadi' ? j.huruf : '';
+  return L.divIcon({ className: '', html: `<div class="tk-pin" style="--c:${j.warna}">${isi}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] });
 }
 
 function isiPopup(t) {
@@ -121,19 +131,25 @@ function isiPopup(t) {
 
 function gambar() {
   lapisanUtama.clearLayers();
+  lapisanLain.clearLayers();
   lapisanPotensial.clearLayers();
+  let tampil = 0;
   for (const t of daftar) {
     const m = L.marker([t.lat, t.lon], { icon: ikon(t), title: namaTitik(t), zIndexOffset: t.jenis === 'potensial' ? 0 : 400 })
       .bindPopup(isiPopup(t));
     m.on('popupopen', (e) => {
       e.popup.getElement()?.querySelector('[data-hapus]')?.addEventListener('click', () => hapusPribadi(t.lat, t.lon));
     });
-    m.addTo(t.jenis === 'potensial' ? lapisanPotensial : lapisanUtama);
+    if (t.jenis === 'potensial') m.addTo(lapisanPotensial);
+    else if (t.jenis === 'pribadi' || tampil++ < MAKS_TAMPIL) m.addTo(lapisanUtama);
+    else m.addTo(lapisanLain);
   }
+  aturZoom();
 }
 
 export function bersihkanTitik() {
   lapisanUtama.clearLayers();
+  lapisanLain.clearLayers();
   lapisanPotensial.clearLayers();
   daftar = [];
 }
@@ -176,7 +192,7 @@ function renderKartu() {
       <p class="meta">Ketuk lokasi di peta, lalu pilih <b>Tandai sebagai titik kumpul</b>. Titik ini dipakai di Tempat Paling Aman dan Mode Darurat (bila berada di zona aman), dan hanya tersimpan di perangkat ini.</p>
       ${galatResmi ? `<p class="meta muted">Data BNPB tidak dapat dihubungi: ${esc(galatResmi)}</p>` : ''}
       ${!osm ? '<p class="meta muted">Data OpenStreetMap belum tersedia (server sibuk).</p>' : ''}
-      <p class="meta muted">Titik abu-abu kecil (tampil saat peta diperbesar) adalah bangunan yang <b>berpotensi</b> menjadi tempat evakuasi, bukan titik resmi.</p>`,
+      <p class="meta muted">Peta menampilkan ${MAKS_TAMPIL} titik terdekat; titik lain muncul saat peta diperbesar. Titik abu-abu kecil adalah bangunan yang <b>berpotensi</b> menjadi tempat evakuasi, bukan titik resmi.</p>`,
   });
   document.querySelectorAll('#card-titik [data-ll]').forEach((li) => li.addEventListener('click', () => {
     const [a, b] = li.dataset.ll.split(',').map(Number);

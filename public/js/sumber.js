@@ -31,7 +31,13 @@ export const aturPermintaan = (fn) => { permintaan = fn; };
 async function ambil(url, { timeout = 30000, json = false, method, body } = {}) {
   const { status, text } = await permintaan(url, { method, body, timeout });
   if (status < 200 || status >= 300) throw new Error(`HTTP ${status} dari ${new URL(url).host}`);
-  return json ? JSON.parse(text) : text;
+  if (!json) return text;
+  // Server yang sedang maintenance (mis. Geoportal ESDM) menjawab HTTP 200 berisi halaman HTML.
+  if (/^\s*</.test(text)) {
+    const judul = text.match(/<title>\s*([^<]*?)\s*<\/title>/i)?.[1];
+    throw new Error(`${new URL(url).host} tidak mengirim data${/maintenance/i.test(judul || '') ? ' (sedang maintenance)' : ''}`);
+  }
+  return JSON.parse(text);
 }
 
 // ---------- Cache ----------
@@ -40,9 +46,11 @@ const cache = new Map();
 async function cached(key, ttlMs, fn) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < ttlMs) return hit.value;
-  const value = await fn();
+  // Promise disimpan langsung agar permintaan serentak untuk kunci yang sama tidak mengambil ulang.
+  const value = fn();
   cache.set(key, { time: Date.now(), value });
   if (cache.size > 2000) cache.delete(cache.keys().next().value);
+  value.catch(() => { if (cache.get(key)?.value === value) cache.delete(key); });
   return value;
 }
 
@@ -132,14 +140,35 @@ function getGeologi(lat, lon) {
   });
 }
 
+// Salinan tersimpan dipakai bila server sumber mati (mis. Geoportal ESDM maintenance).
+// Data dianggap segar selama `segarMs`; setelah itu diunduh ulang, tetapi salinan lama tetap jadi cadangan.
+async function denganCadangan(kunci, segarMs, fn) {
+  try {
+    const ada = await simpanan.baca(kunci, segarMs);
+    if (ada) return ada;
+  } catch { /* belum ada */ }
+  try {
+    const hasil = { ...(await fn()), disimpan: new Date().toISOString() };
+    simpanan.tulis(kunci, hasil).catch((e) => console.warn(`[${kunci}] gagal menyimpan cache:`, e.message));
+    return hasil;
+  } catch (galat) {
+    const lama = await simpanan.baca(kunci, Infinity).catch(() => null);
+    if (lama) return { ...lama, cadangan: true, galat: galat.message };
+    throw galat;
+  }
+}
+
 function getSesar(lat, lon, radiusKm) {
   const dLat = radiusKm / 110.57;
   const dLon = radiusKm / (111.32 * Math.cos((lat * Math.PI) / 180));
-  const env = [lon - dLon, lat - dLat, lon + dLon, lat + dLat].map((n) => n.toFixed(4)).join(',');
+  // Kotak dibulatkan keluar ke kisi 0,1° (±11 km) agar lokasi berdekatan memakai salinan yang sama.
+  const bawah = (n) => (Math.floor(n * 10) / 10).toFixed(1);
+  const atas = (n) => (Math.ceil(n * 10) / 10).toFixed(1);
+  const env = [bawah(lon - dLon), bawah(lat - dLat), atas(lon + dLon), atas(lat + dLat)].join(',');
   const q = (svc, fields) => `${ESDM}/${svc}/MapServer/0/query?geometry=${env}&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326`
     + `&spatialRel=esriSpatialRelIntersects&outFields=${fields}&returnGeometry=true&geometryPrecision=4&f=json`;
 
-  return cached(`sesar:${env}`, 24 * 3600e3, async () => {
+  return cached(`sesar:${env}`, 24 * 3600e3, () => denganCadangan(`sesar_${env.replace(/,/g, '_')}`, 30 * 24 * 3600e3, async () => {
     const [besar, kecil] = await Promise.allSettled([
       ambil(q('BGS_PM/Patahan_Aktif_Skala_Besar', 'simobj,namobj,klspthn,pjgpthn,lokasi,sjrhgempa'), { json: true, timeout: 40000 }),
       ambil(q('BGS_PM/Patahan_Aktif_Skala_Kecil', 'nama_patah'), { json: true, timeout: 40000 }),
@@ -173,7 +202,7 @@ function getSesar(lat, lon, radiusKm) {
     }
     if (besar.status === 'rejected' && kecil.status === 'rejected') throw besar.reason;
     return { sumber: 'Badan Geologi – Peta Patahan Aktif', fitur };
-  });
+  }));
 }
 
 // ---------- NASA FIRMS: titik panas ----------
@@ -219,13 +248,10 @@ function getTitikApi() {
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 const tunggu = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function kueriOsm(lat, lon, { rBangunanM, rSungaiKm, rPantaiKm }) {
+// Kueri dipecah dua dan dijalankan bersamaan: titik/bangunan (kecil) dan garis sungai/pantai (besar).
+// Keduanya masing-masing ±40 detik di Overpass publik; digabung jadi satu kueri berurutan ±56 detik.
+function kueriTitik(lat, lon, rBangunanM) {
   const p = `${lat},${lon}`;
-  const kotak = (km) => {
-    const dLat = km / 110.57;
-    const dLon = km / (111.32 * Math.cos((lat * Math.PI) / 180));
-    return [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((n) => n.toFixed(5)).join(',');
-  };
   return `[out:json][timeout:90];
 (
   nwr(around:10000,${p})[emergency~"^(assembly_point|evacuation_point|shelter)$"];
@@ -242,7 +268,17 @@ out center tags;
 way(around:${rBangunanM},${p})[building][~"^(building:levels|height)$"~"."];
 out center tags;
 way(around:${rBangunanM},${p})[building];
-out count;
+out count;`;
+}
+
+function kueriAir(lat, lon, { rSungaiKm, rPantaiKm }) {
+  const p = `${lat},${lon}`;
+  const kotak = (km) => {
+    const dLat = km / 110.57;
+    const dLon = km / (111.32 * Math.cos((lat * Math.PI) / 180));
+    return [lat - dLat, lon - dLon, lat + dLat, lon + dLon].map((n) => n.toFixed(5)).join(',');
+  };
+  return `[out:json][timeout:90];
 (
   way(around:${rSungaiKm * 1000},${p})[waterway=river];
   way(around:3000,${p})[waterway=canal];
@@ -255,16 +291,24 @@ out geom(${kotak(rPantaiKm + 1)});`;
 // Hasil Overpass juga disimpan tahan lama (7 hari) karena server publik sering sibuk dan cache memori hilang saat restart.
 const UMUR_OSM = 7 * 24 * 3600e3;
 
-function getOsm(lat, lon) {
-  // Dibulatkan ±10 m agar klik berdekatan memakai cache yang sama.
+async function getOsm(lat, lon) {
+  // Titik dibulatkan ±10 m. Sungai/pantai (radius belasan km) dibulatkan ±1 km dan radiusnya ditambah
+  // 1 km, sehingga lokasi berdekatan memakai cache yang sama tanpa kehilangan cakupan.
   const la = +lat.toFixed(4);
   const lo = +lon.toFixed(4);
-  // v2: tag evakuasi & bangunan kandidat
-  return cached(`osm2:${la},${lo}`, 24 * 3600e3, () => denganSimpanan(`${la}_${lo}_v2`, UMUR_OSM, () => ambilOsmBaru(la, lo)));
+  const la2 = +lat.toFixed(2);
+  const lo2 = +lon.toFixed(2);
+  const [titik, air] = await Promise.all([
+    cached(`osmt:${la},${lo}`, 24 * 3600e3, () => denganSimpanan(`t_${la}_${lo}_v3`, UMUR_OSM,
+      () => ambilOverpass(kueriTitik(la, lo, 600)))),
+    cached(`osma:${la2},${lo2}`, 24 * 3600e3, () => denganSimpanan(`a_${la2}_${lo2}_v3`, UMUR_OSM,
+      () => ambilOverpass(kueriAir(la2, lo2, { rSungaiKm: 17, rPantaiKm: 26 })))),
+  ]);
+  return { sumber: 'OpenStreetMap (Overpass)', elements: [...titik.elements, ...air.elements] };
 }
 
-async function ambilOsmBaru(la, lo) {
-  const body = { data: kueriOsm(la, lo, { rBangunanM: 600, rSungaiKm: 16, rPantaiKm: 25 }) };
+async function ambilOverpass(kueri) {
+  const body = { data: kueri };
   let galat;
   for (let coba = 0; coba < 3; coba++) {
     for (const url of OVERPASS) {

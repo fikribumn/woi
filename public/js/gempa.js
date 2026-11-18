@@ -185,6 +185,8 @@ export async function muatGempa(ctx) {
       ${sesarTerdekat?.sejarah ? `<p class="meta">Sejarah gempa ${esc(sesarTerdekat.nama)}: ${esc(sesarTerdekat.sejarah)}</p>` : ''}
       ${sekitar.length ? `<ul class="list">${items}</ul>` : '<p class="muted">Tidak ada gempa tercatat di sekitar.</p>'}
       ${gempa.value.sebagian ? '<p class="meta muted">Sebagian sumber gagal dimuat; data mungkin tidak lengkap.</p>' : ''}
+      ${sesar.status === 'fulfilled' && sesar.value.cadangan ? `<p class="meta muted">Server Badan Geologi sedang tidak bisa diakses. Data sesar memakai salinan tersimpan (${fmtTanggal(Date.parse(sesar.value.disimpan))}).</p>` : ''}
+      ${sesar.status === 'rejected' ? `<p class="meta muted">Data sesar belum tersedia: ${esc(sesar.reason.message)}. Akan dicoba lagi otomatis.</p>` : ''}
       <ul class="tips">
         <li>Saat gempa: <b>Merunduk, Lindungi kepala, Bertahan</b>; jauhi kaca dan lemari.</li>
         <li>Di pantai dan guncangan kuat/lama (&gt;20 detik)? Segera evakuasi ke tempat tinggi tanpa menunggu peringatan.</li>

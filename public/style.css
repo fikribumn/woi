@@ -900,9 +900,9 @@ h3.sub { font-size: 13px; font-weight: 600; text-transform: uppercase; color: va
 
 /* Titik kumpul */
 .tk-pin {
-  width: 24px;
-  height: 24px;
-  border-radius: 7px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   display: grid;
   place-items: center;
   background: var(--c);

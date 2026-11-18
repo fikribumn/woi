@@ -95,13 +95,13 @@ Belum ada data titik kumpul nasional yang terbuka, jadi aplikasi menggabungkan b
 
 | Jenis | Sumber | Penanda |
 |---|---|---|
-| **Resmi BNPB** | InaRISK – Rencana Evakuasi (TES, TEA, titik kumpul, evakuasi vertikal). Saat ini baru mencakup daerah percontohan, misalnya Badung, Bali | kotak hijau **R** |
-| **Ditandai Anda** | Ketuk peta → *Tandai sebagai titik kumpul*. Tersimpan di perangkat (localStorage) | kotak biru **★** |
-| **OSM** | `emergency=assembly_point/evacuation_point/shelter`, `evacuation_center=yes` | kotak toska **K** |
-| Shelter OSM | `amenity=shelter` (bisa sekadar gazebo) | kotak ungu **S** |
-| Potensial | sekolah, tempat ibadah, kantor pemerintah dalam 3 km. **Bukan titik resmi** | titik abu-abu (tampil di zoom ≥ 14) |
+| **Resmi BNPB** | InaRISK – Rencana Evakuasi (TES, TEA, titik kumpul, evakuasi vertikal). Saat ini baru mencakup daerah percontohan, misalnya Badung, Bali | pin hijau **R** |
+| **Ditandai Anda** | Ketuk peta → *Tandai sebagai titik kumpul*. Tersimpan di perangkat (localStorage) | pin biru **★** |
+| **OSM** | `emergency=assembly_point/evacuation_point/shelter`, `evacuation_center=yes` | pin bulat toska |
+| Shelter OSM | `amenity=shelter` (bisa sekadar gazebo) | pin bulat ungu |
+| Potensial | sekolah, tempat ibadah, kantor pemerintah dalam 3 km. **Bukan titik resmi** | titik abu-abu (tampil di zoom ≥ 16) |
 
-Titik-titik ini ditampilkan di halaman **Titik Kumpul & Evakuasi**, ikut diusulkan di **Tempat Paling Aman** (setelah disaring dengan zona bahaya), dan dipakai sebagai kandidat tujuan di **Mode Darurat**. Titik resmi dan titik pribadi diberi prioritas. Untuk tsunami, gedung TES/evakuasi vertikal resmi tetap sah sebagai tujuan walaupun berada di zona genangan.
+Peta hanya menampilkan 5 titik terdekat (ditambah titik pribadi); titik lain muncul di zoom ≥ 15. Titik-titik ini ditampilkan di halaman **Titik Kumpul & Evakuasi**, ikut diusulkan di **Tempat Paling Aman** (setelah disaring dengan zona bahaya), dan dipakai sebagai kandidat tujuan di **Mode Darurat**. Titik resmi dan titik pribadi diberi prioritas. Untuk tsunami, gedung TES/evakuasi vertikal resmi tetap sah sebagai tujuan walaupun berada di zona genangan.
 
 ## Mode Darurat 🚨
 
@@ -232,7 +232,7 @@ public/data/geoid.json      Tinggi geoid EGM96 wilayah Indonesia (dibuat dengan 
 |---|---|---|
 | `/api/gunung` | MAGMA Indonesia (status gunung api) | 30 menit |
 | `/api/geologi?lat&lon` | Geoportal ESDM: litologi, KRB gempa/tsunami/gunung api, gerakan tanah, likuefaksi | 6 jam |
-| `/api/sesar?lat&lon&r` | Geoportal ESDM: patahan aktif (skala detail + regional) | 24 jam |
+| `/api/sesar?lat&lon&r` | Geoportal ESDM: patahan aktif (skala detail + regional) | 30 hari tersimpan; salinan lama dipakai saat ESDM mati |
 | `/api/titik-api?lat&lon&r` | NASA FIRMS VIIRS (S-NPP + NOAA-20), 48 jam | 30 menit |
 | `/api/osm?lat&lon` | OpenStreetMap Overpass: bangunan, titik kumpul, fasilitas, sungai, pantai | 7 hari di disk (`.cache/osm/`), dicoba ulang bila server sibuk |
 | `/api/gedung?lat&lon` | OpenStreetMap Overpass: bentuk & tinggi gedung radius 800 m | 7 hari di disk |
