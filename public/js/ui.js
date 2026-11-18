@@ -116,14 +116,18 @@ function ringkasRisiko() {
   const maks = daftar.length ? Math.max(...daftar.map((k) => URUTAN_LEVEL[k.level])) : 0;
   const teratas = daftar.filter((k) => URUTAN_LEVEL[k.level] === maks);
   const lv = tsunami ? 'bahaya' : (teratas[0]?.level || 'rendah');
-  const aksi = tsunami ? AKSI_TSUNAMI : AKSI[lv];
+  // Selama kartu lain masih memuat, level di sini hanya sementara: jangan sebut "aman" sebelum semua data masuk.
+  const sementara = memuat.length > 0;
+  const aksi = tsunami ? AKSI_TSUNAMI
+    : sementara && maks <= 1 ? { ...AKSI.rendah, ikon: 'hourglass', teks: 'Analisis belum selesai. Jangan anggap aman dulu.' } : AKSI[lv];
   const nama = teratas.map((k) => k.judul).join(', ');
   const judul = tsunami ? 'Peringatan tsunami'
-    : maks <= 1 ? 'Umumnya aman' : `${esc(nama)}: ${NAMA_LV[lv]}`;
+    : maks <= 1 ? (sementara ? 'Belum lengkap' : 'Umumnya aman')
+      : `${sementara ? 'Sementara · ' : ''}${esc(nama)}: ${NAMA_LV[lv]}`;
   const detail = tsunami ? 'card-tsunami' : (maks > 1 ? teratas[0].id : null);
 
   el.innerHTML = `
-    <div class="kartu-utama" data-level="${lv}">
+    <div class="kartu-utama" data-level="${!tsunami && sementara && maks <= 1 ? '' : lv}">
       <div class="ku-atas">
         <span class="ku-ikon">${ikon(aksi.ikon)}</span>
         <div class="ku-teks">
