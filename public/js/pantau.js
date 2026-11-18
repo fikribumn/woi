@@ -43,7 +43,8 @@ const berpotensiTsunami = (g) => /tsunami/i.test(g.potensi || '') && !/tidak/i.t
 function nilaiDampak(g) {
   const jarak = jarakKm(lokasi.lat, lokasi.lon, g.lat, g.lon);
   const mmi = perkiraanMMI(g.mag, Math.sqrt(jarak ** 2 + (g.kedalaman || 10) ** 2));
-  const tsunami = berpotensiTsunami(g) && lokasi.pesisir && jarak <= 600;
+  // pesisir null = belum diketahui (analisis belum selesai): anggap pesisir agar peringatan tsunami tidak terlewat
+  const tsunami = berpotensiTsunami(g) && lokasi.pesisir !== false && jarak <= 600;
   let level = null;
   if (tsunami || mmi >= 6) level = 'bahaya';
   else if (mmi >= 4) level = 'waspada';
@@ -94,11 +95,10 @@ export function mulaiPantau(opsi) {
 /** Dipanggil main.js setiap analisis lokasi selesai. */
 export function aturLokasiPantau(l) {
   const baru = !lokasi || jarakKm(lokasi.lat, lokasi.lon, l.lat, l.lon) > 0.05;
+  const pesisirBerubah = !!lokasi && lokasi.pesisir !== l.pesisir;
   lokasi = l;
-  if (baru) {
-    cek();
-    lokasiKeLatar(l);
-  }
+  if (baru) cek();
+  if (baru || pesisirBerubah) lokasiKeLatar(l);
   // ?demo=gempa|tsunami: jalankan simulasi sekali setelah analisis pertama
   if (demo) {
     simulasi(demo);

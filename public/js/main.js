@@ -102,7 +102,8 @@ async function muatSemua() {
   const sub = nilai(peta.gempa)?.subduksiTerdekat;
   aturLokasiPantau({
     lat: ctx.lat, lon: ctx.lon, label: lokasi.label,
-    pesisir: !!nilai(peta.tsunami)?.pesisir, sub, tinggiAman: sub && sub.km < 300 ? 30 : 20,
+    // Kartu tsunami gagal: status pesisir tetap "belum diketahui" (null), bukan "bukan pesisir"
+    pesisir: nilai(peta.tsunami) ? !!nilai(peta.tsunami).pesisir : null, sub, tinggiAman: sub && sub.km < 300 ? 30 : 20,
   });
   await Promise.allSettled([muatJarak(ctx, peta), muatAman(ctx, peta)]);
   renderIkon();
@@ -122,6 +123,9 @@ function setLokasi(lat, lon, label) {
   if (!label) cariNamaTempat(lat, lon);
   muatGedung3D(lat, lon);
   aturLokasiLaporan(lat, lon);
+  // Pemantauan BMKG langsung aktif, tanpa menunggu analisis (OSM bisa ±1 menit).
+  // pesisir null = belum diketahui; pantau.js memperlakukannya sebagai pesisir.
+  aturLokasiPantau({ lat, lon, label: lokasi.label, pesisir: null, sub: null, tinggiAman: 30 });
   muatSemua();
 }
 

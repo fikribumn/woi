@@ -63,7 +63,7 @@ const kirimKeRunner = (event, details) => {
 };
 
 /** Simpan lokasi agar pemantau latar belakang tahu titik yang harus dinilai. */
-export const lokasiKeLatar = ({ lat, lon, label, pesisir }) => kirimKeRunner('aturLokasi', { lat, lon, label: label || '', pesisir: !!pesisir });
+export const lokasiKeLatar = ({ lat, lon, label, pesisir }) => kirimKeRunner('aturLokasi', { lat, lon, label: label || '', pesisir: pesisir !== false });
 
 /** Kejadian yang sudah diperingatkan di layar tidak perlu dinotifikasi ulang oleh pemantau latar belakang. */
 export const tandaiDiLatar = (id) => kirimKeRunner('tandai', { id });
